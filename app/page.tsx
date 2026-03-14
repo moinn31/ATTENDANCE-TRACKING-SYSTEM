@@ -14,13 +14,34 @@ export default function Home() {
 
   useEffect(() => {
     const getUser = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      setUser(user)
-      setLoading(false)
+      try {
+        const {
+          data: { user },
+          error,
+        } = await supabase.auth.getUser()
+        
+        if (error) {
+          console.error('Auth error:', error.message)
+          // Clear invalid session
+          await supabase.auth.signOut()
+          setUser(null)
+          setLoading(false)
+          router.push('/auth/login')
+          return
+        }
+        
+        setUser(user)
+        setLoading(false)
 
-      if (!user) {
+        if (!user) {
+          router.push('/auth/login')
+        }
+      } catch (error) {
+        console.error('Failed to get user:', error)
+        // Clear any corrupted session data
+        await supabase.auth.signOut()
+        setUser(null)
+        setLoading(false)
         router.push('/auth/login')
       }
     }

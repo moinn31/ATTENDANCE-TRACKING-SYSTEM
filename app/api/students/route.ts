@@ -1,6 +1,19 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
 
+type StudentRow = {
+  id: string
+  name: string
+  roll_number?: string | null
+  enrollment_number?: string | null
+}
+
+type FaceEmbeddingRow = {
+  student_id: string
+  embedding_vector: string
+  created_at?: string | null
+}
+
 export async function GET(request: NextRequest) {
   try {
     const supabase = await createClient()
@@ -13,12 +26,48 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get students - would query from database when schema is set up
-    // For now, return mock data
-    const students = [
-      { id: '1', name: 'John Doe', email: 'john@example.com', enrollment_number: 'E001', face_enrolled: true },
-      { id: '2', name: 'Jane Smith', email: 'jane@example.com', enrollment_number: 'E002', face_enrolled: true },
-    ]
+    const { searchParams } = new URL(request.url)
+    const includeEmbeddings = searchParams.get('includeEmbeddings') === 'true'
+
+    const { data: studentRows, error: studentsError } = await supabase
+      .from('students')
+      .select('*')
+      .order('created_at', { ascending: false })
+
+    if (studentsError) {
+      return NextResponse.json({ error: studentsError.message }, { status: 500 })
+    }
+
+    const rows = (studentRows ?? []) as StudentRow[]
+
+    const { data: embeddingRows, error: embeddingsError } = await supabase
+      .from('face_embeddings')
+      .select('student_id, embedding_vector, created_at')
+      .order('created_at', { ascending: false })
+
+    if (embeddingsError) {
+      return NextResponse.json({ error: embeddingsError.message }, { status: 500 })
+    }
+
+    const latestByStudent = new Map<string, FaceEmbeddingRow>()
+    for (const embedding of (embeddingRows ?? []) as FaceEmbeddingRow[]) {
+      if (!latestByStudent.has(embedding.student_id)) {
+        latestByStudent.set(embedding.student_id, embedding)
+      }
+    }
+
+    const students = rows.map((row) => {
+      const latestEmbedding = latestByStudent.get(row.id)
+      const rollNumber = row.roll_number ?? row.enrollment_number ?? null
+
+      return {
+        id: row.id,
+        name: row.name,
+        roll_number: rollNumber,
+        face_enrolled: Boolean(latestEmbedding),
+        embedding_vector: includeEmbeddings ? latestEmbedding?.embedding_vector ?? null : undefined,
+      }
+    })
 
     return NextResponse.json({ data: students })
   } catch (error) {
@@ -40,20 +89,32 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { name, email, enrollment_number } = body
+    const name = typeof body?.name === 'string' ? body.name.trim() : ''
+    const rollNumber = typeof body?.roll_number === 'string' ? body.roll_number.trim() : ''
 
-    if (!name || !email || !enrollment_number) {
+    if (!name || !rollNumber) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
-    // Would insert into database when schema is set up
+    const { data: createdStudent, error: createError } = await supabase
+      .from('students')
+      .insert({
+        name,
+        roll_number: rollNumber,
+      })
+      .select('*')
+      .single()
+
+    if (createError) {
+      return NextResponse.json({ error: createError.message }, { status: 400 })
+    }
+
+    const row = createdStudent as StudentRow
     const newStudent = {
-      id: Date.now().toString(),
-      name,
-      email,
-      enrollment_number,
+      id: row.id,
+      name: row.name,
+      roll_number: row.roll_number ?? row.enrollment_number ?? null,
       face_enrolled: false,
-      created_at: new Date().toISOString(),
     }
 
     return NextResponse.json({ data: newStudent }, { status: 201 })

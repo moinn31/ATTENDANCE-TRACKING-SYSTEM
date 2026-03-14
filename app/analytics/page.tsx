@@ -28,7 +28,7 @@ interface AnalyticsData {
   systemAccuracy: number
   dailyData: Array<{ date: string; present: number; absent: number; late: number }>
   studentMetrics: Array<{ name: string; attendance: number; confidence: number }>
-  faceMetrics: Array<{ confidence: number; count: number }>
+  faceMetrics: Array<{ confidence: string; count: number }>
 }
 
 export default function AnalyticsPage() {
@@ -41,15 +41,25 @@ export default function AnalyticsPage() {
   // Check authentication
   useEffect(() => {
     const getUser = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      if (!user) {
+      try {
+        const {
+          data: { user },
+          error,
+        } = await supabase.auth.getUser()
+        
+        if (error || !user) {
+          if (error) console.error('Auth error:', error.message)
+          await supabase.auth.signOut()
+          router.push('/auth/login')
+          return
+        }
+        setUser(user)
+        setLoading(false)
+      } catch (error) {
+        console.error('Failed to get user:', error)
+        await supabase.auth.signOut()
         router.push('/auth/login')
-        return
       }
-      setUser(user)
-      setLoading(false)
     }
 
     getUser()

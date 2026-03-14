@@ -245,4 +245,5 @@ if (require.main === module) {
   main()
 }
 
-export { DataExporter, AttendanceRecord, HadoopInput, HadoopOutput }
+export { DataExporter }
+export type { AttendanceRecord, HadoopInput, HadoopOutput }

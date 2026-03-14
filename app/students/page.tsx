@@ -11,8 +11,7 @@ import FaceEnrollmentModal from '@/components/face-enrollment-modal'
 interface Student {
   id: string
   name: string
-  email: string
-  enrollment_number: string
+  roll_number: string | null
   face_enrolled: boolean
 }
 
@@ -21,45 +20,58 @@ export default function StudentsPage() {
   const [loading, setLoading] = useState(true)
   const [user, setUser] = useState<any>(null)
   const [showAddForm, setShowAddForm] = useState(false)
-  const [newStudent, setNewStudent] = useState({ name: '', email: '', enrollment_number: '' })
+  const [newStudent, setNewStudent] = useState({ name: '', roll_number: '' })
   const [enrollingStudentId, setEnrollingStudentId] = useState<string | null>(null)
   const [enrollingStudentName, setEnrollingStudentName] = useState<string>('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const router = useRouter()
   const supabase = createClient()
+
+  const fetchStudents = async () => {
+    try {
+      const response = await fetch('/api/students', { cache: 'no-store' })
+      const payload = await response.json()
+
+      if (!response.ok) {
+        throw new Error(payload.error || 'Failed to load students')
+      }
+
+      setStudents(payload.data || [])
+    } catch (err) {
+      console.error('[v0] Error fetching students:', err)
+      setError(err instanceof Error ? err.message : 'Failed to fetch students')
+    }
+  }
 
   // Check authentication
   useEffect(() => {
     const getUser = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      if (!user) {
+      try {
+        const {
+          data: { user },
+          error,
+        } = await supabase.auth.getUser()
+        
+        if (error || !user) {
+          if (error) console.error('Auth error:', error.message)
+          await supabase.auth.signOut()
+          router.push('/auth/login')
+          return
+        }
+        setUser(user)
+        setLoading(false)
+      } catch (error) {
+        console.error('Failed to get user:', error)
+        await supabase.auth.signOut()
         router.push('/auth/login')
-        return
       }
-      setUser(user)
-      setLoading(false)
     }
 
     getUser()
   }, [router, supabase.auth])
 
-  // Fetch students
   useEffect(() => {
-    const fetchStudents = async () => {
-      try {
-        // Mock data until database is set up
-        const mockStudents: Student[] = [
-          { id: '1', name: 'John Doe', email: 'john@example.com', enrollment_number: 'E001', face_enrolled: true },
-          { id: '2', name: 'Jane Smith', email: 'jane@example.com', enrollment_number: 'E002', face_enrolled: true },
-          { id: '3', name: 'Bob Johnson', email: 'bob@example.com', enrollment_number: 'E003', face_enrolled: false },
-        ]
-        setStudents(mockStudents)
-      } catch (err) {
-        console.error('[v0] Error fetching students:', err)
-      }
-    }
-
     if (!loading) {
       fetchStudents()
     }
@@ -68,28 +80,58 @@ export default function StudentsPage() {
   const handleAddStudent = async (e: React.FormEvent) => {
     e.preventDefault()
     
-    if (!newStudent.name || !newStudent.email || !newStudent.enrollment_number) {
+    if (!newStudent.name || !newStudent.roll_number) {
       alert('Please fill in all fields')
       return
     }
 
     try {
-      // Add to mock data for now
-      const student: Student = {
-        id: Date.now().toString(),
-        ...newStudent,
-        face_enrolled: false,
+      setSaving(true)
+      setError(null)
+
+      const response = await fetch('/api/students', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newStudent),
+      })
+
+      const payload = await response.json()
+      if (!response.ok) {
+        throw new Error(payload.error || 'Failed to add student')
       }
-      setStudents([...students, student])
-      setNewStudent({ name: '', email: '', enrollment_number: '' })
+
+      setStudents((prev) => [payload.data, ...prev])
+      setNewStudent({ name: '', roll_number: '' })
       setShowAddForm(false)
     } catch (err) {
       console.error('[v0] Error adding student:', err)
+      setError(err instanceof Error ? err.message : 'Failed to add student')
+    } finally {
+      setSaving(false)
     }
   }
 
-  const deleteStudent = (id: string) => {
-    setStudents(students.filter(s => s.id !== id))
+  const deleteStudent = async (id: string) => {
+    try {
+      setSaving(true)
+      setError(null)
+
+      const response = await fetch(`/api/students/${id}`, {
+        method: 'DELETE',
+      })
+
+      const payload = await response.json()
+      if (!response.ok) {
+        throw new Error(payload.error || 'Failed to delete student')
+      }
+
+      setStudents((prev) => prev.filter((student) => student.id !== id))
+    } catch (err) {
+      console.error('[v0] Error deleting student:', err)
+      setError(err instanceof Error ? err.message : 'Failed to delete student')
+    } finally {
+      setSaving(false)
+    }
   }
 
   const handleStartEnrollment = (studentId: string, studentName: string) => {
@@ -97,21 +139,38 @@ export default function StudentsPage() {
     setEnrollingStudentName(studentName)
   }
 
-  const handleEnrollmentComplete = (faceData: any) => {
-    console.log('[v0] Face enrollment data:', faceData)
-    
-    // Update student's face_enrolled status
-    setStudents(
-      students.map(s =>
-        s.id === faceData.studentId ? { ...s, face_enrolled: true } : s
+  const handleEnrollmentComplete = async (faceData: any) => {
+    try {
+      setSaving(true)
+      setError(null)
+
+      const response = await fetch(`/api/students/${faceData.studentId}/face-enrollment`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ descriptor: faceData.descriptor }),
+      })
+
+      const payload = await response.json()
+      if (!response.ok) {
+        throw new Error(payload.error || 'Failed to save face enrollment')
+      }
+
+      setStudents((prev) =>
+        prev.map((student) =>
+          student.id === faceData.studentId ? { ...student, face_enrolled: true } : student,
+        ),
       )
-    )
-    
-    setEnrollingStudentId(null)
-    setEnrollingStudentName('')
-    
-    // Here you would normally save the face descriptor to your database
-    // await supabase.from('face_embeddings').insert({...})
+
+      await fetchStudents()
+
+      setEnrollingStudentId(null)
+      setEnrollingStudentName('')
+    } catch (err) {
+      console.error('[v0] Error saving face data:', err)
+      setError(err instanceof Error ? err.message : 'Failed to save face enrollment')
+    } finally {
+      setSaving(false)
+    }
   }
 
   if (loading) {
@@ -137,6 +196,12 @@ export default function StudentsPage() {
           </div>
         </div>
 
+        {error && (
+          <div className="mb-4 p-4 bg-destructive/10 border border-destructive/20 rounded text-destructive">
+            {error}
+          </div>
+        )}
+
         {/* Add Student Form */}
         {showAddForm && (
           <div className="mb-8 bg-card border border-border rounded-lg p-6">
@@ -150,21 +215,14 @@ export default function StudentsPage() {
                   required
                 />
                 <Input
-                  placeholder="Email"
-                  type="email"
-                  value={newStudent.email}
-                  onChange={(e) => setNewStudent({ ...newStudent, email: e.target.value })}
-                  required
-                />
-                <Input
-                  placeholder="Enrollment Number"
-                  value={newStudent.enrollment_number}
-                  onChange={(e) => setNewStudent({ ...newStudent, enrollment_number: e.target.value })}
+                  placeholder="Roll Number"
+                  value={newStudent.roll_number}
+                  onChange={(e) => setNewStudent({ ...newStudent, roll_number: e.target.value })}
                   required
                 />
               </div>
               <div className="flex gap-2">
-                <Button type="submit">Add Student</Button>
+                <Button type="submit" disabled={saving}>Add Student</Button>
                 <Button type="button" variant="outline" onClick={() => setShowAddForm(false)}>
                   Cancel
                 </Button>
@@ -179,8 +237,7 @@ export default function StudentsPage() {
             <thead className="bg-muted border-b border-border">
               <tr>
                 <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Name</th>
-                <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Email</th>
-                <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Enrollment #</th>
+                <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Roll Number</th>
                 <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Face Data</th>
                 <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Actions</th>
               </tr>
@@ -189,8 +246,7 @@ export default function StudentsPage() {
               {students.map((student) => (
                 <tr key={student.id} className="hover:bg-muted/50 transition-colors">
                   <td className="px-6 py-4 text-foreground">{student.name}</td>
-                  <td className="px-6 py-4 text-foreground">{student.email}</td>
-                  <td className="px-6 py-4 text-foreground">{student.enrollment_number}</td>
+                  <td className="px-6 py-4 text-foreground">{student.roll_number || '-'}</td>
                   <td className="px-6 py-4">
                     <span className={`inline-block px-3 py-1 rounded text-sm font-medium ${
                       student.face_enrolled 
@@ -213,6 +269,7 @@ export default function StudentsPage() {
                       <Button 
                         size="sm" 
                         variant="destructive"
+                        disabled={saving}
                         onClick={() => deleteStudent(student.id)}
                       >
                         Delete

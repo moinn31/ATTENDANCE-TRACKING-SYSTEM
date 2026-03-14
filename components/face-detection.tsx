@@ -76,7 +76,7 @@ export const useFaceDetection = ({
       const detections = await faceapi
         .detectAllFaces(video, new faceapi.TinyFaceDetectorOptions())
         .withFaceLandmarks()
-        .withFaceRecognitions()
+        .withFaceDescriptors()
         .withFaceExpressions()
 
       if (!detections || detections.length === 0) {
