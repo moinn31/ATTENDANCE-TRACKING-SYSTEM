@@ -14,7 +14,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [mounted, setMounted] = useState(false)
   const router = useRouter()
-  const supabase = createClient()
+  const [supabase] = useState(() => createClient())
 
   useEffect(() => {
     setMounted(true)
@@ -37,7 +37,8 @@ export default function LoginPage() {
         return
       }
 
-      router.push('/')
+      router.replace('/')
+      router.refresh()
     } catch (error) {
       setError('An unexpected error occurred')
       setLoading(false)

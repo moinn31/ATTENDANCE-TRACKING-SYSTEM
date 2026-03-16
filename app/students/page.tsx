@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { formatDatabaseActionError, isMissingSessionError } from '@/lib/supabase/auth-errors'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import Link from 'next/link'
@@ -26,7 +27,7 @@ export default function StudentsPage() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const router = useRouter()
-  const supabase = createClient()
+  const [supabase] = useState(() => createClient())
 
   const fetchStudents = async () => {
     try {
@@ -53,23 +54,32 @@ export default function StudentsPage() {
           error,
         } = await supabase.auth.getUser()
         
-        if (error || !user) {
-          if (error) console.error('Auth error:', error.message)
+        if (error && !isMissingSessionError(error.message)) {
+          console.error('Auth error:', error.message)
           await supabase.auth.signOut()
-          router.push('/auth/login')
+          setLoading(false)
+          router.replace('/auth/login')
           return
         }
+
+        if (!user) {
+          setLoading(false)
+          router.replace('/auth/login')
+          return
+        }
+
         setUser(user)
         setLoading(false)
       } catch (error) {
         console.error('Failed to get user:', error)
         await supabase.auth.signOut()
-        router.push('/auth/login')
+        setLoading(false)
+        router.replace('/auth/login')
       }
     }
 
-    getUser()
-  }, [router, supabase.auth])
+    void getUser()
+  }, [router, supabase])
 
   useEffect(() => {
     if (!loading) {
@@ -89,18 +99,28 @@ export default function StudentsPage() {
       setSaving(true)
       setError(null)
 
-      const response = await fetch('/api/students', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newStudent),
-      })
+      const { data, error: insertError } = await supabase
+        .from('students')
+        .insert({
+          name: newStudent.name.trim(),
+          roll_number: newStudent.roll_number.trim(),
+        })
+        .select('id, name, roll_number')
+        .single()
 
-      const payload = await response.json()
-      if (!response.ok) {
-        throw new Error(payload.error || 'Failed to add student')
+      if (insertError || !data) {
+        throw new Error(formatDatabaseActionError(insertError?.message || 'Failed to add student'))
       }
 
-      setStudents((prev) => [payload.data, ...prev])
+      setStudents((prev) => [
+        {
+          id: data.id,
+          name: data.name,
+          roll_number: data.roll_number,
+          face_enrolled: false,
+        },
+        ...prev,
+      ])
       setNewStudent({ name: '', roll_number: '' })
       setShowAddForm(false)
     } catch (err) {
@@ -116,13 +136,10 @@ export default function StudentsPage() {
       setSaving(true)
       setError(null)
 
-      const response = await fetch(`/api/students/${id}`, {
-        method: 'DELETE',
-      })
+      const { error: deleteError } = await supabase.from('students').delete().eq('id', id)
 
-      const payload = await response.json()
-      if (!response.ok) {
-        throw new Error(payload.error || 'Failed to delete student')
+      if (deleteError) {
+        throw new Error(formatDatabaseActionError(deleteError.message || 'Failed to delete student'))
       }
 
       setStudents((prev) => prev.filter((student) => student.id !== id))
@@ -144,15 +161,24 @@ export default function StudentsPage() {
       setSaving(true)
       setError(null)
 
-      const response = await fetch(`/api/students/${faceData.studentId}/face-enrollment`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ descriptor: faceData.descriptor }),
+      const serializedDescriptor = JSON.stringify(faceData.descriptor)
+
+      const { error: deleteOldError } = await supabase
+        .from('face_embeddings')
+        .delete()
+        .eq('student_id', faceData.studentId)
+
+      if (deleteOldError) {
+        throw new Error(formatDatabaseActionError(deleteOldError.message || 'Failed to clear previous face enrollment'))
+      }
+
+      const { error: insertError } = await supabase.from('face_embeddings').insert({
+        student_id: faceData.studentId,
+        embedding_vector: serializedDescriptor,
       })
 
-      const payload = await response.json()
-      if (!response.ok) {
-        throw new Error(payload.error || 'Failed to save face enrollment')
+      if (insertError) {
+        throw new Error(formatDatabaseActionError(insertError.message || 'Failed to save face enrollment'))
       }
 
       setStudents((prev) =>
@@ -160,8 +186,6 @@ export default function StudentsPage() {
           student.id === faceData.studentId ? { ...student, face_enrolled: true } : student,
         ),
       )
-
-      await fetchStudents()
 
       setEnrollingStudentId(null)
       setEnrollingStudentName('')

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import * as faceapi from 'face-api.js'
 import { createClient } from '@/lib/supabase/client'
+import { isMissingSessionError } from '@/lib/supabase/auth-errors'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
@@ -31,7 +32,7 @@ interface StudentRosterEntry {
 
 export default function ScannerPage() {
   const router = useRouter()
-  const supabase = createClient()
+  const [supabase] = useState(() => createClient())
 
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -502,21 +503,29 @@ export default function ScannerPage() {
           error,
         } = await supabase.auth.getUser()
 
-        if (error || !user) {
+        if (error && !isMissingSessionError(error.message)) {
           await supabase.auth.signOut()
-          router.push('/auth/login')
+          setLoading(false)
+          router.replace('/auth/login')
+          return
+        }
+
+        if (!user) {
+          setLoading(false)
+          router.replace('/auth/login')
           return
         }
 
         setLoading(false)
       } catch {
         await supabase.auth.signOut()
-        router.push('/auth/login')
+        setLoading(false)
+        router.replace('/auth/login')
       }
     }
 
     void getUser()
-  }, [router, supabase.auth])
+  }, [router, supabase])
 
   useEffect(() => {
     if (!loading) {

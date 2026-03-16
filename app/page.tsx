@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { isMissingSessionError } from '@/lib/supabase/auth-errors'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 
@@ -10,7 +11,7 @@ export default function Home() {
   const [user, setUser] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const router = useRouter()
-  const supabase = createClient()
+  const [supabase] = useState(() => createClient())
 
   useEffect(() => {
     const getUser = async () => {
@@ -20,34 +21,32 @@ export default function Home() {
           error,
         } = await supabase.auth.getUser()
         
-        if (error) {
+        if (error && !isMissingSessionError(error.message)) {
           console.error('Auth error:', error.message)
-          // Clear invalid session
           await supabase.auth.signOut()
           setUser(null)
           setLoading(false)
-          router.push('/auth/login')
+          router.replace('/auth/login')
           return
         }
-        
+
         setUser(user)
         setLoading(false)
 
         if (!user) {
-          router.push('/auth/login')
+          router.replace('/auth/login')
         }
       } catch (error) {
         console.error('Failed to get user:', error)
-        // Clear any corrupted session data
         await supabase.auth.signOut()
         setUser(null)
         setLoading(false)
-        router.push('/auth/login')
+        router.replace('/auth/login')
       }
     }
 
-    getUser()
-  }, [router, supabase.auth])
+    void getUser()
+  }, [router, supabase])
 
   const handleLogout = async () => {
     await supabase.auth.signOut()

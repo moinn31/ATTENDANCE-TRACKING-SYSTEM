@@ -11,23 +11,10 @@ export function createClient() {
   
   return createBrowserClient(url, key, {
     auth: {
-      persistSession: false, // Disable session persistence to avoid stale token issues
-      autoRefreshToken: false, // Disable auto-refresh to prevent fetch errors
+      persistSession: true,
+      autoRefreshToken: true,
       detectSessionInUrl: true,
       flowType: 'pkce',
-    },
-    global: {
-      fetch: (url: RequestInfo | URL, options: RequestInit = {}) => {
-        return fetch(url, options).catch((error) => {
-          // Silently suppress network errors to prevent console spam
-          console.debug('Supabase network error (suppressed):', error.message)
-          // Return a failed response instead of throwing
-          return new Response(JSON.stringify({ error: 'Network error', message: error.message }), {
-            status: 0,
-            statusText: 'Network Error',
-          })
-        })
-      },
     },
   })
 }
