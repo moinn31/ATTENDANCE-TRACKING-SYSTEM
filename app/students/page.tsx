@@ -252,9 +252,9 @@ export default function StudentsPage() {
         )}
 
         <Dialog open={showAddForm} onOpenChange={setShowAddForm}>
-          <DialogContent className="w-[min(98vw,1360px)] max-w-none overflow-hidden rounded-[2rem] border-0 p-0 shadow-[0_35px_110px_rgba(15,23,42,0.42)]">
-            <div className="grid min-h-[720px] lg:grid-cols-[minmax(760px,1.35fr)_minmax(420px,0.85fr)]">
-              <div className="overflow-y-auto bg-white p-6 md:p-8 lg:p-10">
+          <DialogContent className="w-[min(96vw,1180px)] max-w-none overflow-hidden rounded-[2rem] border-0 p-0 shadow-[0_35px_110px_rgba(15,23,42,0.42)]">
+            <div className="grid min-h-[680px] lg:grid-cols-[minmax(690px,1.18fr)_minmax(390px,0.82fr)]">
+              <div className="bg-white p-6 md:p-8 lg:p-10">
                 <DialogHeader className="text-left">
                   <DialogTitle className="text-2xl font-semibold text-slate-800 md:text-3xl">Add Students</DialogTitle>
                   <DialogDescription className="max-w-xl text-sm text-slate-500 md:text-base">
@@ -286,24 +286,6 @@ export default function StudentsPage() {
                     </div>
                   </div>
 
-                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-2">
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium text-slate-700">Email Address</label>
-                      <Input
-                        placeholder="Optional email"
-                        type="email"
-                        className="h-11 rounded-xl border-slate-200 bg-white"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium text-slate-700">Section</label>
-                      <Input
-                        placeholder="Example: A / B / C"
-                        className="h-11 rounded-xl border-slate-200 bg-white"
-                      />
-                    </div>
-                  </div>
-
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                     <div className="flex items-center gap-3">
                       <div className="rounded-2xl bg-[#2b5c9e] p-3 text-white">
@@ -327,7 +309,7 @@ export default function StudentsPage() {
                 </form>
               </div>
 
-              <div className="overflow-y-auto bg-[#2b5c9e] p-6 text-white md:p-8 lg:p-10">
+              <div className="flex flex-col bg-[#2b5c9e] p-6 text-white md:p-8 lg:p-10">
                 <div className="flex items-center gap-3">
                   <div className="rounded-2xl bg-white/15 p-3 text-white">
                     <Users className="size-5" />
