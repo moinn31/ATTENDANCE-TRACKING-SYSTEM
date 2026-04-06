@@ -5,7 +5,9 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { isMissingSessionError } from '@/lib/supabase/auth-errors'
 import { Button } from '@/components/ui/button'
-import Link from 'next/link'
+import { DashboardShell } from '@/components/dashboard-shell'
+import { Download, Database, Brain, Cloud } from 'lucide-react'
+import * as XLSX from 'xlsx'
 import {
   LineChart,
   Line,
@@ -108,6 +110,42 @@ export default function AnalyticsPage() {
     }
   }, [loading])
 
+  const exportAnalytics = () => {
+    if (!analytics) return
+
+    const summarySheet = XLSX.utils.aoa_to_sheet([
+      ['Metric', 'Value'],
+      ['Attendance Rate', `${analytics.attendanceRate}%`],
+      ['Total Classes', analytics.totalDays],
+      ['Avg Face Confidence', `${analytics.averageConfidence}%`],
+      ['System Accuracy', `${analytics.systemAccuracy}%`],
+      ['Generated On', new Date().toLocaleString()],
+    ])
+
+    const studentSheet = XLSX.utils.json_to_sheet(
+      analytics.studentMetrics.map((student) => ({
+        Name: student.name,
+        Attendance: `${student.attendance}%`,
+        Confidence: `${student.confidence}%`,
+      })),
+    )
+
+    const dailySheet = XLSX.utils.json_to_sheet(analytics.dailyData)
+    const workbook = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(workbook, summarySheet, 'Summary')
+    XLSX.utils.book_append_sheet(workbook, studentSheet, 'Students')
+    XLSX.utils.book_append_sheet(workbook, dailySheet, 'Daily Trend')
+
+    const workbookArray = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' })
+    const blob = new Blob([workbookArray], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `attendance-analysis-${new Date().toISOString().slice(0, 10)}.xlsx`
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+
   if (loading || !analytics) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -119,33 +157,75 @@ export default function AnalyticsPage() {
   const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444']
 
   return (
-    <main className="min-h-screen bg-background">
-      <div className="max-w-7xl mx-auto px-4 py-8">
-        <div className="flex justify-between items-center mb-8">
-          <h1 className="text-3xl font-bold text-foreground">Analytics Dashboard</h1>
-          <Link href="/">
-            <Button variant="outline">Back to Home</Button>
-          </Link>
-        </div>
+    <DashboardShell title="Reports" subtitle="Analytics and trends">
+      <main className="space-y-6">
+        <section className="glass-card p-6 md:p-8">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-primary">Insights & Trends</p>
+              <h1 className="mt-2 text-3xl font-semibold text-foreground md:text-4xl">Analytics Dashboard</h1>
+              <p className="mt-2 text-sm text-muted-foreground">Track attendance quality, confidence distribution, and student performance at a glance.</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={exportAnalytics} className="rounded-xl bg-[#2b5c9e] hover:bg-[#254f87]">
+                <Download className="mr-2 size-4" />
+                Download Analysis Excel
+              </Button>
+            </div>
+          </div>
+        </section>
+
+        <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <div className="glass-card p-5">
+            <div className="flex items-center gap-3">
+              <div className="rounded-2xl bg-blue-100 p-3 text-blue-700"><Database className="size-5" /></div>
+              <div>
+                <p className="text-sm font-semibold text-slate-800">Big Data</p>
+                <p className="text-xs text-muted-foreground">Attendance trends, summaries, and exports</p>
+              </div>
+            </div>
+            <p className="mt-4 text-sm text-slate-600">Monthly, weekly, and student-level analysis can be exported for offline review or dashboard reporting.</p>
+          </div>
+          <div className="glass-card p-5">
+            <div className="flex items-center gap-3">
+              <div className="rounded-2xl bg-emerald-100 p-3 text-emerald-700"><Brain className="size-5" /></div>
+              <div>
+                <p className="text-sm font-semibold text-slate-800">AI</p>
+                <p className="text-xs text-muted-foreground">Face recognition and confidence scoring</p>
+              </div>
+            </div>
+            <p className="mt-4 text-sm text-slate-600">The recognition flow uses face embeddings and confidence values to support robust attendance decisions.</p>
+          </div>
+          <div className="glass-card p-5">
+            <div className="flex items-center gap-3">
+              <div className="rounded-2xl bg-sky-100 p-3 text-sky-700"><Cloud className="size-5" /></div>
+              <div>
+                <p className="text-sm font-semibold text-slate-800">Cloud Computing</p>
+                <p className="text-xs text-muted-foreground">Supabase storage and serverless APIs</p>
+              </div>
+            </div>
+            <p className="mt-4 text-sm text-slate-600">Authentication, storage, and analysis endpoints are structured for cloud deployment and team access.</p>
+          </div>
+        </section>
 
         {/* Key Metrics */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-          <div className="bg-card border border-border rounded-lg p-6">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="glass-card p-6">
             <p className="text-muted-foreground text-sm mb-1">Attendance Rate</p>
             <p className="text-3xl font-bold text-foreground">{analytics.attendanceRate}%</p>
             <p className="text-xs text-muted-foreground mt-2">Current week</p>
           </div>
-          <div className="bg-card border border-border rounded-lg p-6">
+          <div className="glass-card p-6">
             <p className="text-muted-foreground text-sm mb-1">Total Classes</p>
             <p className="text-3xl font-bold text-foreground">{analytics.totalDays}</p>
             <p className="text-xs text-muted-foreground mt-2">This semester</p>
           </div>
-          <div className="bg-card border border-border rounded-lg p-6">
+          <div className="glass-card p-6">
             <p className="text-muted-foreground text-sm mb-1">Avg Face Confidence</p>
             <p className="text-3xl font-bold text-foreground">{analytics.averageConfidence}%</p>
             <p className="text-xs text-muted-foreground mt-2">Recognition quality</p>
           </div>
-          <div className="bg-card border border-border rounded-lg p-6">
+          <div className="glass-card p-6">
             <p className="text-muted-foreground text-sm mb-1">System Accuracy</p>
             <p className="text-3xl font-bold text-foreground">{analytics.systemAccuracy}%</p>
             <p className="text-xs text-muted-foreground mt-2">Detection rate</p>
@@ -153,9 +233,9 @@ export default function AnalyticsPage() {
         </div>
 
         {/* Charts */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Daily Attendance Chart */}
-          <div className="bg-card border border-border rounded-lg p-6">
+          <div className="glass-card p-6">
             <h2 className="text-xl font-semibold text-foreground mb-4">Daily Attendance</h2>
             <ResponsiveContainer width="100%" height={300}>
               <BarChart data={analytics.dailyData}>
@@ -172,7 +252,7 @@ export default function AnalyticsPage() {
           </div>
 
           {/* Face Confidence Distribution */}
-          <div className="bg-card border border-border rounded-lg p-6">
+          <div className="glass-card p-6">
             <h2 className="text-xl font-semibold text-foreground mb-4">Face Recognition Confidence</h2>
             <ResponsiveContainer width="100%" height={300}>
               <PieChart>
@@ -197,11 +277,11 @@ export default function AnalyticsPage() {
         </div>
 
         {/* Student Performance */}
-        <div className="bg-card border border-border rounded-lg p-6">
+        <div className="glass-card p-6">
           <h2 className="text-xl font-semibold text-foreground mb-4">Student Performance</h2>
           <div className="overflow-x-auto">
             <table className="w-full">
-              <thead className="bg-muted border-b border-border">
+              <thead className="bg-muted/60 border-b border-border">
                 <tr>
                   <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Student Name</th>
                   <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Attendance Rate</th>
@@ -242,7 +322,7 @@ export default function AnalyticsPage() {
             </table>
           </div>
         </div>
-      </div>
-    </main>
+      </main>
+    </DashboardShell>
   )
 }

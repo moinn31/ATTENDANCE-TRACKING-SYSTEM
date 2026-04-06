@@ -302,9 +302,9 @@ export default function FaceEnrollmentModal({
 
   if (loading) {
     return (
-      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-        <div className="bg-card rounded-lg p-8 max-w-md w-full mx-4">
-          <p className="text-foreground text-center">Loading face recognition models...</p>
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 px-4 backdrop-blur-sm">
+        <div className="w-full max-w-md rounded-3xl border border-white/15 bg-white p-8 shadow-2xl">
+          <p className="text-center text-sm font-semibold text-slate-700">Loading face recognition models...</p>
         </div>
       </div>
     )
@@ -312,13 +312,13 @@ export default function FaceEnrollmentModal({
 
   if (success) {
     return (
-      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-        <div className="bg-card rounded-lg p-8 max-w-md w-full mx-4">
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 px-4 backdrop-blur-sm">
+        <div className="w-full max-w-md rounded-3xl border border-white/15 bg-white p-8 shadow-2xl">
           <div className="text-center">
-            <div className="text-4xl mb-4">✓</div>
-            <h2 className="text-2xl font-bold text-foreground mb-2">Face Enrollment Complete</h2>
-            <p className="text-muted-foreground mb-6">Face data for {studentName} has been successfully saved.</p>
-            <Button onClick={onCancel} className="w-full">
+            <div className="mx-auto mb-4 flex size-16 items-center justify-center rounded-full bg-emerald-100 text-3xl text-emerald-600">✓</div>
+            <h2 className="mb-2 text-2xl font-semibold text-slate-800">Face Enrollment Complete</h2>
+            <p className="mb-6 text-sm text-slate-600">Face data for {studentName} has been successfully saved.</p>
+            <Button onClick={onCancel} className="w-full rounded-xl bg-[#2b5c9e] hover:bg-[#254f87]">
               Close
             </Button>
           </div>
@@ -328,90 +328,117 @@ export default function FaceEnrollmentModal({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-card rounded-lg max-w-2xl w-full mx-4 max-h-screen overflow-y-auto">
-        <div className="p-6">
-          <h2 className="text-2xl font-bold text-foreground mb-2">Enroll Face - {studentName}</h2>
-          <p className="text-muted-foreground mb-6">
-            Position your face in the camera frame. We'll capture 5 images for better recognition accuracy.
-          </p>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/65 px-4 backdrop-blur-sm">
+      <div className="w-full max-w-5xl overflow-hidden rounded-[2rem] border border-white/20 bg-white shadow-[0_25px_80px_rgba(15,23,42,0.45)]">
+        <div className="flex items-center justify-between border-b border-slate-200 bg-gradient-to-r from-[#2b5c9e] to-[#3f78bf] px-6 py-4 text-white">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.25em] text-white/70">Face Enrollment</p>
+            <h2 className="mt-1 text-2xl font-semibold">Enroll Face - {studentName}</h2>
+          </div>
+          <button onClick={onCancel} className="rounded-full p-2 text-white/80 transition hover:bg-white/15 hover:text-white" aria-label="Close modal">
+            ✕
+          </button>
+        </div>
 
-          {error && (
-            <div className="mb-4 p-3 bg-destructive/10 border border-destructive/20 rounded text-destructive text-sm">
-              {error}
-            </div>
-          )}
+        <div className="grid gap-0 lg:grid-cols-[1.4fr_0.9fr]">
+          <div className="p-6">
+            <p className="mb-4 text-sm text-slate-600">
+              Position your face in the camera frame. We&apos;ll capture 5 images for better recognition accuracy.
+            </p>
 
-          {!modelsLoaded && (
-            <div className="mb-4 p-3 bg-yellow-500/10 border border-yellow-500/20 rounded text-yellow-700 text-sm">
-              Loading models... please wait
-            </div>
-          )}
-
-          <div className="relative bg-black rounded-lg overflow-hidden mb-6" style={{ aspectRatio: '4/3' }}>
-            <video
-              ref={videoRef}
-              autoPlay
-              playsInline
-              className={`w-full h-full object-cover ${cameraActive ? 'block' : 'hidden'}`}
-            />
-            <canvas
-              ref={canvasRef}
-              className={`absolute inset-0 w-full h-full ${cameraActive ? 'block' : 'hidden'}`}
-            />
-            {!cameraActive && (
-              <div className="absolute inset-0 w-full h-full flex items-center justify-center">
-                <p className="text-muted-foreground">Camera off</p>
+            {error && (
+              <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                {error}
               </div>
             )}
 
-            {capturing && (
-              <div className="absolute inset-0 flex flex-col items-center justify-between p-4 pointer-events-none">
-                <div className="bg-black/80 rounded-lg p-4 text-center">
-                  <p className="text-white text-lg font-bold mb-2">Face Recognition in Progress</p>
-                  <p className="text-green-400 text-sm">Frames captured: {capturedFrames.length} / 5</p>
-                  <p className="text-yellow-300 text-xs mt-2">{guidanceMessage}</p>
-                </div>
-                <div className="bg-black/80 rounded-lg p-4 w-full max-w-xs">
-                  <div className="flex gap-2">
-                    {Array.from({ length: 5 }).map((_, i) => (
-                      <div
-                        key={i}
-                        className={`h-3 flex-1 rounded-full transition-all ${
-                          i < capturedFrames.length
-                            ? 'bg-green-500 scale-105'
-                            : 'bg-gray-600'
-                        }`}
-                      />
-                    ))}
+            {!modelsLoaded && (
+              <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700">
+                Loading models... please wait
+              </div>
+            )}
+
+            <div className="relative mb-6 overflow-hidden rounded-[1.75rem] border border-slate-200 bg-slate-950" style={{ aspectRatio: '4/3' }}>
+              <video
+                ref={videoRef}
+                autoPlay
+                playsInline
+                className={`h-full w-full object-cover ${cameraActive ? 'block' : 'hidden'}`}
+              />
+              <canvas
+                ref={canvasRef}
+                className={`absolute inset-0 h-full w-full ${cameraActive ? 'block' : 'hidden'}`}
+              />
+              {!cameraActive && (
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-sm text-white/75 backdrop-blur">
+                    Camera off
                   </div>
-                  <p className="text-white text-xs text-center mt-2">
-                    {capturedFrames.length === 5 ? '✓ Processing...' : 'Hold still...'}
-                  </p>
                 </div>
-              </div>
-            )}
+              )}
+
+              {capturing && (
+                <div className="absolute inset-0 flex flex-col items-center justify-between p-4 pointer-events-none">
+                  <div className="w-full max-w-sm rounded-2xl bg-slate-950/80 p-4 text-center text-white shadow-xl backdrop-blur">
+                    <p className="mb-2 text-lg font-semibold">Face Recognition in Progress</p>
+                    <p className="text-sm text-emerald-300">Frames captured: {capturedFrames.length} / 5</p>
+                    <p className="mt-2 text-xs text-amber-200">{guidanceMessage}</p>
+                  </div>
+                  <div className="w-full max-w-sm rounded-2xl bg-slate-950/80 p-4 shadow-xl backdrop-blur">
+                    <div className="flex gap-2">
+                      {Array.from({ length: 5 }).map((_, i) => (
+                        <div
+                          key={i}
+                          className={`h-3 flex-1 rounded-full transition-all ${
+                            i < capturedFrames.length ? 'bg-green-500 scale-105' : 'bg-white/20'
+                          }`}
+                        />
+                      ))}
+                    </div>
+                    <p className="mt-2 text-center text-xs text-white/80">
+                      {capturedFrames.length === 5 ? 'Processing...' : 'Hold still...'}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
-          <div className="space-y-3">
-            {!cameraActive ? (
-              <Button onClick={startCamera} className="w-full" disabled={!modelsLoaded}>
-                Start Camera
-              </Button>
-            ) : !capturing ? (
-              <>
-                <Button onClick={startCapturing} className="w-full" disabled={!modelsLoaded}>
-                  Start Face Capture
+          <div className="border-t border-slate-200 bg-slate-50/80 p-6 lg:border-t-0 lg:border-l">
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Guidance</p>
+                <p className="mt-2 text-sm text-slate-600">Keep your face centered, well lit, and look directly into the camera for five samples.</p>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Capture Status</p>
+                <div className="mt-3 grid grid-cols-5 gap-2">
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <div key={i} className={`h-3 rounded-full ${i < capturedFrames.length ? 'bg-[#2b5c9e]' : 'bg-slate-200'}`} />
+                  ))}
+                </div>
+                <p className="mt-2 text-xs text-slate-500">{capturedFrames.length} of 5 samples captured</p>
+              </div>
+
+              {!cameraActive ? (
+                <Button onClick={startCamera} className="w-full rounded-xl bg-[#2b5c9e] hover:bg-[#254f87]" disabled={!modelsLoaded}>
+                  Start Camera
                 </Button>
-                <Button onClick={stopCamera} variant="outline" className="w-full">
-                  Cancel
+              ) : !capturing ? (
+                <div className="space-y-3">
+                  <Button onClick={startCapturing} className="w-full rounded-xl bg-[#2b5c9e] hover:bg-[#254f87]" disabled={!modelsLoaded}>
+                    Start Face Capture
+                  </Button>
+                  <Button onClick={stopCamera} variant="outline" className="w-full rounded-xl border-slate-200 bg-white">
+                    Cancel
+                  </Button>
+                </div>
+              ) : (
+                <Button onClick={stopCamera} variant="destructive" className="w-full rounded-xl">
+                  Stop Capture
                 </Button>
-              </>
-            ) : (
-              <Button onClick={stopCamera} variant="destructive" className="w-full">
-                Stop Capture
-              </Button>
-            )}
+              )}
+            </div>
           </div>
         </div>
       </div>

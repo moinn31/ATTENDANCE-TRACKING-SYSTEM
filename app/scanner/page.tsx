@@ -8,6 +8,7 @@ import { createClient } from '@/lib/supabase/client'
 import { isMissingSessionError } from '@/lib/supabase/auth-errors'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { DashboardShell } from '@/components/dashboard-shell'
 
 interface DetectedStudent {
   id: string
@@ -29,6 +30,11 @@ interface StudentRosterEntry {
   name: string
   roll_number?: string | null
 }
+
+const DETECTOR_INPUT_SIZE = 512
+const DETECTOR_SCORE_THRESHOLD = 0.12
+const FACE_MATCH_DISTANCE_THRESHOLD = 0.62
+const REQUIRED_CONFIRMATION_FRAMES = 3
 
 export default function ScannerPage() {
   const router = useRouter()
@@ -113,8 +119,9 @@ export default function ScannerPage() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+          frameRate: { ideal: 30, min: 24 },
           facingMode: { ideal: 'environment' },
         },
         audio: false,
@@ -134,8 +141,9 @@ export default function ScannerPage() {
       try {
         const fallbackStream = await navigator.mediaDevices.getUserMedia({
           video: {
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+            frameRate: { ideal: 30, min: 24 },
             facingMode: 'user',
           },
           audio: false,
@@ -230,9 +238,15 @@ export default function ScannerPage() {
       const initialWidth = video.videoWidth
       const initialHeight = video.videoHeight
 
-      // inputSize 320 + lower scoreThreshold handles backlit / low-contrast faces better
+      // Higher inputSize helps detect smaller faces farther from the camera.
       const detections = await faceapi
-        .detectAllFaces(video, new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.2 }))
+        .detectAllFaces(
+          video,
+          new faceapi.TinyFaceDetectorOptions({
+            inputSize: DETECTOR_INPUT_SIZE,
+            scoreThreshold: DETECTOR_SCORE_THRESHOLD,
+          }),
+        )
         .withFaceLandmarks()
         .withFaceDescriptors()
 
@@ -283,8 +297,8 @@ export default function ScannerPage() {
         const currentVotes = candidateVotesRef.current.get(matched.id) ?? 0
         candidateVotesRef.current.set(matched.id, currentVotes + 1)
 
-        // Require at least two positive frames before marking present preview.
-        if ((candidateVotesRef.current.get(matched.id) ?? 0) < 2) {
+        // Extra confirmation frames prevent false matches when using long-range tuning.
+        if ((candidateVotesRef.current.get(matched.id) ?? 0) < REQUIRED_CONFIRMATION_FRAMES) {
           continue
         }
 
@@ -543,7 +557,7 @@ export default function ScannerPage() {
     const labeledDescriptors = enrolledStudents.map(
       (student) => new faceapi.LabeledFaceDescriptors(student.id, [student.descriptor]),
     )
-    faceMatcherRef.current = new faceapi.FaceMatcher(labeledDescriptors, 0.55)
+    faceMatcherRef.current = new faceapi.FaceMatcher(labeledDescriptors, FACE_MATCH_DISTANCE_THRESHOLD)
     enrolledByIdRef.current = new Map(enrolledStudents.map((student) => [student.id, student]))
   }, [enrolledStudents])
 
@@ -569,16 +583,22 @@ export default function ScannerPage() {
   }
 
   return (
-    <main className="min-h-screen bg-background">
-      <div className="max-w-7xl mx-auto px-4 py-8">
-        <div className="flex justify-between items-center mb-8">
-          <h1 className="text-3xl font-bold text-foreground">Smart Attendance Scanner</h1>
-          <Link href="/">
-            <Button variant="outline">Back to Home</Button>
-          </Link>
-        </div>
+    <DashboardShell title="Attendance Scanner" subtitle="Realtime face recognition session">
+      <main className="space-y-6">
+        <section className="glass-card p-6 md:p-8">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-primary">Realtime Recognition</p>
+              <h1 className="mt-2 text-3xl font-semibold text-foreground md:text-4xl">Smart Attendance Scanner</h1>
+              <p className="mt-2 text-sm text-muted-foreground">Start a session, detect faces live, review attendance, and save accurate results.</p>
+            </div>
+            <Link href="/">
+              <Button variant="outline" className="rounded-xl border-border/70 bg-card/80">Back to Home</Button>
+            </Link>
+          </div>
+        </section>
 
-        <div className="bg-card border border-border rounded-lg p-4 mb-6 grid grid-cols-1 md:grid-cols-5 gap-3">
+        <div className="glass-card p-4 grid grid-cols-1 md:grid-cols-5 gap-3">
           <Input value={className} onChange={(e) => setClassName(e.target.value)} placeholder="Class" />
           <Input value={subjectName} onChange={(e) => setSubjectName(e.target.value)} placeholder="Subject" />
           <Input type="date" value={attendanceDate} onChange={(e) => setAttendanceDate(e.target.value)} />
@@ -597,32 +617,32 @@ export default function ScannerPage() {
           </div>
         </div>
 
-        <div className="mb-4">
+        <div>
           <Button variant="destructive" onClick={clearSavedAttendance} disabled={sessionActive || isSaving}>
             Clear All Saved Attendance Data
           </Button>
         </div>
 
-        <div className="mb-4 grid grid-cols-1 md:grid-cols-4 gap-3">
-          <div className="p-3 rounded border bg-card">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+          <div className="glass-card p-3">
             <p className="text-xs text-muted-foreground">Session</p>
             <p className="text-sm font-medium text-foreground">{sessionActive ? 'Running' : 'Stopped'}</p>
           </div>
-          <div className="p-3 rounded border bg-green-50 border-green-300">
+          <div className="glass-card border-green-300 bg-green-50/80 p-3">
             <p className="text-xs text-muted-foreground">{attendanceSaved ? 'Present (Saved)' : scanCompleted ? 'Present (Preview)' : 'Detected'}</p>
             <p className="text-sm font-semibold text-green-700">{presentCount}</p>
           </div>
-          <div className="p-3 rounded border bg-red-50 border-red-300">
+          <div className="glass-card border-red-300 bg-red-50/80 p-3">
             <p className="text-xs text-muted-foreground">{attendanceSaved ? 'Absent (Saved)' : scanCompleted ? 'Absent (Preview)' : 'Not yet seen'}</p>
             <p className="text-sm font-semibold text-red-700">{secondMetricCount}</p>
           </div>
-          <div className="p-3 rounded border bg-card">
+          <div className="glass-card p-3">
             <p className="text-xs text-muted-foreground">Last Scan</p>
             <p className="text-sm font-medium text-foreground">{lastScanAt || '-'}</p>
           </div>
         </div>
 
-        <div className="mb-4 p-3 rounded border bg-card">
+        <div className="glass-card p-3">
           <p className="text-xs text-muted-foreground">Status</p>
           <p className="text-sm font-medium text-foreground">{scanStatus}</p>
         </div>
@@ -634,14 +654,14 @@ export default function ScannerPage() {
         )}
 
         {!modelsLoaded && (
-          <div className="mb-4 p-4 bg-yellow-500/10 border border-yellow-500/20 rounded text-yellow-700">
+          <div className="p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-xl text-yellow-700">
             Loading recognition models...
           </div>
         )}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2">
-            <div className="bg-card border border-border rounded-lg overflow-hidden">
+            <div className="glass-card overflow-hidden">
               <div className="relative bg-black aspect-video">
                 <video
                   ref={videoRef}
@@ -663,7 +683,7 @@ export default function ScannerPage() {
             </div>
           </div>
 
-          <div className="bg-card border border-border rounded-lg p-6">
+          <div className="glass-card p-6">
             <h2 className="text-xl font-semibold text-foreground mb-4">Recognized Students (Preview)</h2>
             <div className="space-y-3 max-h-96 overflow-y-auto">
               {detectedStudents.length === 0 ? (
@@ -682,7 +702,7 @@ export default function ScannerPage() {
           </div>
         </div>
 
-        <div className="mt-8 bg-card border border-border rounded-lg p-6">
+        <div className="glass-card p-6">
           <h2 className="text-xl font-semibold text-foreground mb-4">Attendance Preview</h2>
           {!sessionActive && !scanCompleted && !attendanceSaved ? (
             <p className="text-sm text-muted-foreground">Start scan to begin attendance. After scanning, you can review and edit before saving.</p>
@@ -800,7 +820,7 @@ export default function ScannerPage() {
             </div>
           )}
         </div>
-      </div>
-    </main>
+      </main>
+    </DashboardShell>
   )
 }

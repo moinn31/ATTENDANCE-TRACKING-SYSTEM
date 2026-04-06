@@ -4,25 +4,25 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
+  --background: oklch(0.98 0.01 95);
+  --foreground: oklch(0.24 0.03 247);
+  --card: oklch(0.995 0.004 95);
+  --card-foreground: oklch(0.23 0.03 247);
+  --popover: oklch(1 0.004 95);
+  --popover-foreground: oklch(0.23 0.03 247);
+  --primary: oklch(0.48 0.12 219);
+  --primary-foreground: oklch(0.98 0 0);
+  --secondary: oklch(0.95 0.01 204);
+  --secondary-foreground: oklch(0.26 0.02 230);
+  --muted: oklch(0.95 0.01 95);
+  --muted-foreground: oklch(0.47 0.02 245);
+  --accent: oklch(0.86 0.1 78);
+  --accent-foreground: oklch(0.2 0.04 46);
   --destructive: oklch(0.577 0.245 27.325);
   --destructive-foreground: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  --border: oklch(0.9 0.01 222);
+  --input: oklch(0.9 0.01 222);
+  --ring: oklch(0.65 0.09 220);
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);
   --chart-3: oklch(0.398 0.07 227.392);
@@ -40,20 +40,20 @@
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.145 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.145 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.985 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
+  --background: oklch(0.16 0.02 248);
+  --foreground: oklch(0.95 0.01 95);
+  --card: oklch(0.2 0.02 248);
+  --card-foreground: oklch(0.95 0.01 95);
+  --popover: oklch(0.18 0.02 248);
+  --popover-foreground: oklch(0.95 0.01 95);
+  --primary: oklch(0.74 0.11 219);
+  --primary-foreground: oklch(0.17 0.03 248);
+  --secondary: oklch(0.27 0.02 246);
+  --secondary-foreground: oklch(0.95 0.01 95);
+  --muted: oklch(0.27 0.02 246);
+  --muted-foreground: oklch(0.74 0.02 245);
+  --accent: oklch(0.74 0.12 78);
+  --accent-foreground: oklch(0.2 0.04 46);
   --destructive: oklch(0.396 0.141 25.723);
   --destructive-foreground: oklch(0.637 0.237 25.331);
   --border: oklch(0.269 0 0);
@@ -75,8 +75,8 @@
 }
 
 @theme inline {
-  --font-sans: 'Geist', 'Geist Fallback';
-  --font-mono: 'Geist Mono', 'Geist Mono Fallback';
+  --font-sans: 'Sora', 'Sora Fallback';
+  --font-mono: 'JetBrains Mono', 'JetBrains Mono Fallback';
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -119,7 +119,34 @@
   * {
     @apply border-border outline-ring/50;
   }
+  html,
+  body {
+    min-height: 100%;
+  }
   body {
     @apply bg-background text-foreground;
+    background-image:
+      radial-gradient(900px circle at 0% 0%, color-mix(in oklab, var(--color-primary) 20%, transparent), transparent 60%),
+      radial-gradient(700px circle at 100% 8%, color-mix(in oklab, var(--color-accent) 22%, transparent), transparent 62%),
+      linear-gradient(180deg, color-mix(in oklab, var(--color-background) 80%, white), var(--color-background));
+    background-attachment: fixed;
+  }
+}
+
+@layer components {
+  .page-wrap {
+    @apply mx-auto w-full max-w-7xl px-4 py-8 md:px-6;
+  }
+
+  .glass-card {
+    @apply rounded-2xl border border-border/70 bg-card/80 shadow-[0_12px_40px_-24px_rgba(15,23,42,0.45)] backdrop-blur;
+  }
+
+  .hero-title {
+    @apply text-3xl font-semibold tracking-tight md:text-5xl;
+  }
+
+  .hero-subtitle {
+    @apply max-w-2xl text-sm text-muted-foreground md:text-base;
   }
 }
