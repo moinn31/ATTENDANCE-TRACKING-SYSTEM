@@ -61,8 +61,8 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-background">
       <div className="w-full max-w-md">
         <div className="bg-card border border-border rounded-lg p-8">
-          <h1 className="text-3xl font-bold text-foreground mb-2">Smart Attendance</h1>
-          <p className="text-muted-foreground mb-6">Sign in to your account</p>
+          <h1 className="text-3xl font-bold text-foreground mb-2">Admin Login</h1>
+          <p className="text-muted-foreground mb-6">Sign in with your registered admin account</p>
 
           <form onSubmit={handleLogin} className="space-y-4">
             <div>

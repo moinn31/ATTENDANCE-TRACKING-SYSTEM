@@ -8,10 +8,14 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
 export default function SignupPage() {
+  const [fullName, setFullName] = useState('')
+  const [adminId, setAdminId] = useState('')
+  const [department, setDepartment] = useState('')
+  const [photoUrl, setPhotoUrl] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
-  const [role, setRole] = useState('teacher')
+  const [role, setRole] = useState('admin')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [mounted, setMounted] = useState(false)
@@ -25,6 +29,11 @@ export default function SignupPage() {
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
+
+    if (!fullName.trim() || !adminId.trim()) {
+      setError('Name and Admin ID are required')
+      return
+    }
 
     if (password !== confirmPassword) {
       setError('Passwords do not match')
@@ -41,6 +50,10 @@ export default function SignupPage() {
           emailRedirectTo: `${window.location.origin}/auth/callback`,
           data: {
             role,
+            full_name: fullName.trim(),
+            admin_id: adminId.trim(),
+            department: department.trim() || null,
+            photo_url: photoUrl.trim() || null,
           },
         },
       })
@@ -75,9 +88,67 @@ export default function SignupPage() {
       <div className="w-full max-w-md">
         <div className="bg-card border border-border rounded-lg p-8">
           <h1 className="text-3xl font-bold text-foreground mb-2">Create Account</h1>
-          <p className="text-muted-foreground mb-6">Sign up for Smart Attendance</p>
+          <p className="text-muted-foreground mb-6">Register Admin account for Smart Attendance</p>
 
           <form onSubmit={handleSignup} className="space-y-4">
+            <div>
+              <label htmlFor="fullName" className="block text-sm font-medium text-foreground mb-2">
+                Full Name
+              </label>
+              <Input
+                id="fullName"
+                type="text"
+                placeholder="Admin full name"
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                required
+                disabled={loading}
+              />
+            </div>
+
+            <div>
+              <label htmlFor="adminId" className="block text-sm font-medium text-foreground mb-2">
+                Admin ID
+              </label>
+              <Input
+                id="adminId"
+                type="text"
+                placeholder="ADM-001"
+                value={adminId}
+                onChange={(e) => setAdminId(e.target.value)}
+                required
+                disabled={loading}
+              />
+            </div>
+
+            <div>
+              <label htmlFor="department" className="block text-sm font-medium text-foreground mb-2">
+                Department (optional)
+              </label>
+              <Input
+                id="department"
+                type="text"
+                placeholder="Faculty / Administration"
+                value={department}
+                onChange={(e) => setDepartment(e.target.value)}
+                disabled={loading}
+              />
+            </div>
+
+            <div>
+              <label htmlFor="photoUrl" className="block text-sm font-medium text-foreground mb-2">
+                Photo URL (optional)
+              </label>
+              <Input
+                id="photoUrl"
+                type="url"
+                placeholder="https://example.com/admin-photo.jpg"
+                value={photoUrl}
+                onChange={(e) => setPhotoUrl(e.target.value)}
+                disabled={loading}
+              />
+            </div>
+
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-foreground mb-2">
                 Email
@@ -104,7 +175,6 @@ export default function SignupPage() {
                 disabled={loading}
                 className="w-full px-3 py-2 bg-background border border-input rounded-md text-foreground"
               >
-                <option value="teacher">Teacher</option>
                 <option value="admin">Admin</option>
               </select>
             </div>

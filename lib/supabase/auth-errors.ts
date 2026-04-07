@@ -10,6 +10,20 @@ export function isMissingSessionError(message?: string | null) {
   )
 }
 
+export function isSupabaseNetworkError(message?: string | null) {
+  if (!message) {
+    return false
+  }
+
+  const normalized = message.toLowerCase()
+  return (
+    normalized.includes('fetch failed') ||
+    normalized.includes('enotfound') ||
+    normalized.includes('getaddrinfo') ||
+    normalized.includes('network')
+  )
+}
+
 export function formatDatabaseActionError(message?: string | null) {
   if (!message) {
     return 'Database operation failed'

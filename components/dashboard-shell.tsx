@@ -1,6 +1,6 @@
 'use client'
 
-import type { ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { Bell, ChevronDown, LayoutDashboard, UserRound, BarChart3, Settings, Search, Users } from 'lucide-react'
@@ -25,13 +25,14 @@ import {
 } from '@/components/ui/sidebar'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
+import { createClient } from '@/lib/supabase/client'
 
 const navigationItems = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/scanner', label: 'Attendance', icon: UserRound },
   { href: '/students', label: 'Students', icon: Users },
   { href: '/analytics', label: 'Reports', icon: BarChart3 },
-  { href: '/settings', label: 'Settings', icon: Settings, disabled: true },
+  { href: '/settings', label: 'Settings', icon: Settings },
 ]
 
 type DashboardShellProps = {
@@ -43,6 +44,55 @@ type DashboardShellProps = {
 
 export function DashboardShell({ title, subtitle, children, headerActions }: DashboardShellProps) {
   const pathname = usePathname()
+  const [supabase] = useState(() => createClient())
+  const [profile, setProfile] = useState({
+    name: 'Admin',
+    subTitle: 'Faculty',
+    imageUrl: 'https://i.pravatar.cc/100?img=12',
+  })
+
+  useEffect(() => {
+    const loadProfile = async () => {
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser()
+
+        if (!user) {
+          return
+        }
+
+        const fullName = typeof user.user_metadata?.full_name === 'string' ? user.user_metadata.full_name.trim() : ''
+        const department = typeof user.user_metadata?.department === 'string' ? user.user_metadata.department.trim() : ''
+        const role = typeof user.user_metadata?.role === 'string' ? user.user_metadata.role.trim() : ''
+        const photoUrl = typeof user.user_metadata?.photo_url === 'string' ? user.user_metadata.photo_url.trim() : ''
+
+        setProfile({
+          name: fullName || user.email || 'Admin',
+          subTitle: department || role || 'Faculty',
+          imageUrl: photoUrl || 'https://i.pravatar.cc/100?img=12',
+        })
+      } catch {
+        // Keep default profile data if auth metadata is unavailable.
+      }
+    }
+
+    void loadProfile()
+  }, [supabase])
+
+  const avatarFallback = useMemo(() => {
+    const trimmed = profile.name.trim()
+    if (!trimmed) {
+      return 'AD'
+    }
+
+    const parts = trimmed.split(/\s+/).filter(Boolean)
+    if (parts.length === 1) {
+      return parts[0].slice(0, 2).toUpperCase()
+    }
+
+    return `${parts[0][0] ?? ''}${parts[1][0] ?? ''}`.toUpperCase() || 'AD'
+  }, [profile.name])
 
   return (
     <SidebarProvider defaultOpen>
@@ -152,12 +202,12 @@ export function DashboardShell({ title, subtitle, children, headerActions }: Das
                 </Button>
                 <div className="flex items-center gap-3 rounded-full border border-border/70 bg-white/75 px-3 py-2 shadow-sm">
                   <Avatar className="size-9">
-                    <AvatarImage src="https://i.pravatar.cc/100?img=12" alt="Profile" />
-                    <AvatarFallback>AD</AvatarFallback>
+                    <AvatarImage src={profile.imageUrl} alt="Profile" />
+                    <AvatarFallback>{avatarFallback}</AvatarFallback>
                   </Avatar>
                   <div className="leading-tight">
-                    <p className="text-sm font-semibold text-foreground">Admin</p>
-                    <p className="text-xs text-muted-foreground">Faculty</p>
+                    <p className="text-sm font-semibold text-foreground">{profile.name}</p>
+                    <p className="text-xs text-muted-foreground">{profile.subTitle}</p>
                   </div>
                   <ChevronDown className="size-4 text-muted-foreground" />
                 </div>

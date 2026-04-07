@@ -1,6 +1,17 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
-import { isMissingSessionError } from './auth-errors'
+import { isMissingSessionError, isSupabaseNetworkError } from './auth-errors'
+
+let hasLoggedSupabaseNetworkIssue = false
+
+function logSupabaseNetworkIssueOnce(message: string) {
+  if (hasLoggedSupabaseNetworkIssue) {
+    return
+  }
+
+  hasLoggedSupabaseNetworkIssue = true
+  console.warn(message)
+}
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
@@ -50,14 +61,23 @@ export async function updateSession(request: NextRequest) {
     const { data, error } = await supabase.auth.getUser()
     if (error) {
       if (!isMissingSessionError(error.message)) {
-        console.error('Auth error in proxy:', error.message)
+        if (isSupabaseNetworkError(error.message)) {
+          logSupabaseNetworkIssueOnce('Supabase is temporarily unreachable. Check DNS/network or update NEXT_PUBLIC_SUPABASE_URL in .env.local')
+        } else {
+          console.error('Auth error in proxy:', error.message)
+        }
       }
     } else {
       user = data.user
     }
   } catch (error) {
     // Catch network errors or other exceptions gracefully
-    console.error('Failed to get user in proxy:', error)
+    const message = error instanceof Error ? error.message : String(error)
+    if (isSupabaseNetworkError(message)) {
+      logSupabaseNetworkIssueOnce('Failed to reach Supabase during auth check. Continuing without session refresh for this request')
+    } else {
+      console.error('Failed to get user in proxy:', error)
+    }
   }
 
   if (

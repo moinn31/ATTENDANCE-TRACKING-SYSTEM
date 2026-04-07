@@ -12,7 +12,8 @@ export function createClient() {
   return createBrowserClient(url, key, {
     auth: {
       persistSession: true,
-      autoRefreshToken: true,
+      // Reduce repeated network retries in local development when Supabase is temporarily unreachable.
+      autoRefreshToken: process.env.NODE_ENV === 'production',
       detectSessionInUrl: true,
       flowType: 'pkce',
     },
