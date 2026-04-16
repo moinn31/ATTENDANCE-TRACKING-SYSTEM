@@ -14,8 +14,11 @@ export default function CameraCheckPage() {
   const [isMobile, setIsMobile] = useState(false)
   const [testStream, setTestStream] = useState<MediaStream | null>(null)
   const [isTestingCamera, setIsTestingCamera] = useState(false)
+  const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
+    setMounted(true)
+    
     // Check if mobile
     const mobile = /android|iphone|ipad|ipod|mobile|webos|blackberry|windows phone/i.test(
       navigator.userAgent
@@ -91,7 +94,13 @@ export default function CameraCheckPage() {
           <Shield className="h-4 w-4" />
           <AlertDescription>
             <strong>Device Type:</strong> {isMobile ? '📱 Mobile' : '💻 Desktop'} <br />
-            <strong>User Agent:</strong> <code className="text-xs">{navigator.userAgent}</code>
+            {mounted ? (
+              <>
+                <strong>User Agent:</strong> <code className="text-xs break-all">{navigator.userAgent}</code>
+              </>
+            ) : (
+              <em className="text-gray-500">Loading device info...</em>
+            )}
           </AlertDescription>
         </Alert>
 
