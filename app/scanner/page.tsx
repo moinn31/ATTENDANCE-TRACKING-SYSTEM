@@ -6,6 +6,7 @@ import * as faceapi from 'face-api.js'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { DashboardShell } from '@/components/dashboard-shell'
+import { analyzeAttendanceVideo, type EnrolledFace, type VideoRecognitionMatch } from '@/lib/attendance-video'
 
 interface DetectedStudent {
   id: string
@@ -32,11 +33,24 @@ const DETECTOR_INPUT_SIZE = 512
 const DETECTOR_SCORE_THRESHOLD = 0.12
 const FACE_MATCH_DISTANCE_THRESHOLD = 0.62
 const REQUIRED_CONFIRMATION_FRAMES = 3
+const VIDEO_CAPTURE_DURATION_MS = 6500
+
+const getPreferredRecorderMimeType = () => {
+  if (typeof window === 'undefined' || typeof MediaRecorder === 'undefined') {
+    return ''
+  }
+
+  const candidates = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm']
+  return candidates.find((candidate) => MediaRecorder.isTypeSupported(candidate)) || ''
+}
 
 export default function ScannerPage() {
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const detectionIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const recordingTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const recordedChunksRef = useRef<Blob[]>([])
   const previewPresentRef = useRef<Set<string>>(new Set())
   const candidateVotesRef = useRef<Map<string, number>>(new Map())
   const faceMatcherRef = useRef<faceapi.FaceMatcher | null>(null)
@@ -50,6 +64,7 @@ export default function ScannerPage() {
   const [modelsLoaded, setModelsLoaded] = useState(false)
   const [cameraActive, setCameraActive] = useState(false)
   const [sessionActive, setSessionActive] = useState(false)
+  const [isProcessingVideo, setIsProcessingVideo] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
 
   const [className, setClassName] = useState('Class A')
@@ -458,45 +473,8 @@ export default function ScannerPage() {
     }, 300)
   }
 
-  const startAttendanceSession = async () => {
-    if (!modelsLoaded) {
-      setError('Face models are still loading. Please wait.')
-      return
-    }
-
-    if (enrolledStudents.length === 0) {
-      setError('No enrolled students found. Enroll faces first.')
-      return
-    }
-
-    if (!attendanceDate || !className.trim() || !subjectName.trim()) {
-      setError('Select class, subject and date before starting attendance.')
-      return
-    }
-
-    const ok = await startCamera()
-    if (!ok) return
-
-    setError(null)
-    sessionActiveRef.current = true
-    setSessionActive(true)
-    setAttendanceSaved(false)
-    setScanCompleted(false)
-    setDetectedStudents([])
-    candidateVotesRef.current = new Map()
-    previewPresentRef.current = new Set()
-    setPreviewPresentIds([])
-    setScanStatus('Scanning started. Faces will be matched in real time. Stop scan when done.')
-
-    startDetectionLoop()
-  }
-
   const stopAttendanceSession = () => {
-    sessionActiveRef.current = false
-    setSessionActive(false)
-    stopCamera()
-    setScanCompleted(true)
-    setScanStatus('Scanning stopped. Review the attendance preview below. Toggle any corrections, then click Save Attendance.')
+    stopRecordedSession()
   }
 
   const clearPreview = () => {
@@ -551,9 +529,84 @@ export default function ScannerPage() {
     }
   }
 
+  const applyRecognitionMatches = (matches: VideoRecognitionMatch[]) => {
+    const dedupedMatches = Array.from(new Map(matches.map((match) => [match.studentId, match])).values())
+    const nextPresentIds = new Set<string>()
+
+    const recognizedStudents: DetectedStudent[] = dedupedMatches.map((match) => {
+      nextPresentIds.add(match.studentId)
+      return {
+        id: match.studentId,
+        name: match.name,
+        roll_number: match.roll_number,
+        confidence: match.confidence,
+        timestamp: new Date().toLocaleTimeString(),
+      }
+    })
+
+    previewPresentRef.current = nextPresentIds
+    setPreviewPresentIds(Array.from(nextPresentIds))
+    setDetectedStudents(recognizedStudents)
+    setScanCompleted(true)
+
+    if (dedupedMatches.length === 0) {
+      setScanStatus('Video processed, but no enrolled faces matched the recorded frames.')
+      return
+    }
+
+    const frameCount = dedupedMatches.reduce((total, match) => total + match.frameCount, 0)
+    setScanStatus(`Video processed frame by frame. Matched ${dedupedMatches.length} student(s) from ${frameCount} unique face track(s).`)
+  }
+
+  const processRecordedVideo = async (blob: Blob) => {
+    setIsProcessingVideo(true)
+    setScanStatus('Processing recorded video frame by frame...')
+
+    try {
+      const matches = await analyzeAttendanceVideo(blob, enrolledStudents as EnrolledFace[], {
+        onStatus: (message) => setScanStatus(message),
+      })
+
+      applyRecognitionMatches(matches)
+    } catch (err) {
+      console.error('[scanner] recorded video processing error', err)
+      setError(err instanceof Error ? err.message : 'Failed to process attendance video')
+      setScanStatus('Video processing failed. You can retry the scan.')
+    } finally {
+      setIsProcessingVideo(false)
+    }
+  }
+
+  const stopRecordedSession = () => {
+    if (recordingTimeoutRef.current) {
+      clearTimeout(recordingTimeoutRef.current)
+      recordingTimeoutRef.current = null
+    }
+
+    const recorder = mediaRecorderRef.current
+    if (recorder && recorder.state === 'recording') {
+      setScanStatus('Stopping video recording and preparing frame analysis...')
+      recorder.stop()
+      return
+    }
+
+    if (sessionActive) {
+      sessionActiveRef.current = false
+      setSessionActive(false)
+      stopCamera()
+      setScanCompleted(true)
+      setScanStatus('Video scan stopped. Review the attendance preview below, then save if it looks correct.')
+    }
+  }
+
   const saveAttendance = async () => {
     if (!attendanceDate || !className.trim() || !subjectName.trim()) {
       setError('Class, subject and date are required before saving.')
+      return
+    }
+
+    if (isProcessingVideo) {
+      setError('Please wait for video processing to finish before saving attendance.')
       return
     }
 
@@ -592,6 +645,104 @@ export default function ScannerPage() {
       setError(err instanceof Error ? err.message : 'Failed to save attendance')
     } finally {
       setIsSaving(false)
+    }
+  }
+
+  const startAttendanceSession = async () => {
+    if (!modelsLoaded) {
+      setError('Face models are still loading. Please wait.')
+      return
+    }
+
+    if (enrolledStudents.length === 0) {
+      setError('No enrolled students found. Enroll faces first.')
+      return
+    }
+
+    if (!attendanceDate || !className.trim() || !subjectName.trim()) {
+      setError('Select class, subject and date before starting attendance.')
+      return
+    }
+
+    const ok = await startCamera()
+    if (!ok) return
+
+    setError(null)
+    setIsProcessingVideo(false)
+    sessionActiveRef.current = true
+    setSessionActive(true)
+    setAttendanceSaved(false)
+    setScanCompleted(false)
+    setDetectedStudents([])
+    candidateVotesRef.current = new Map()
+    previewPresentRef.current = new Set()
+    setPreviewPresentIds([])
+    recordedChunksRef.current = []
+    mediaRecorderRef.current = null
+
+    const stream = videoRef.current?.srcObject as MediaStream | null
+    if (!stream || typeof MediaRecorder === 'undefined') {
+      setScanStatus('Video recording is unavailable in this browser. Falling back to live frame-by-frame scanning.')
+      startDetectionLoop()
+      return
+    }
+
+    const mimeType = getPreferredRecorderMimeType()
+    const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream)
+
+    mediaRecorderRef.current = recorder
+    recordedChunksRef.current = []
+
+    recorder.ondataavailable = (event) => {
+      if (event.data.size > 0) {
+        recordedChunksRef.current.push(event.data)
+      }
+    }
+
+    recorder.onstop = () => {
+      const chunks = recordedChunksRef.current.slice()
+      recordedChunksRef.current = []
+      mediaRecorderRef.current = null
+
+      if (recordingTimeoutRef.current) {
+        clearTimeout(recordingTimeoutRef.current)
+        recordingTimeoutRef.current = null
+      }
+
+      sessionActiveRef.current = false
+      setSessionActive(false)
+      stopCamera()
+
+      const blob = new Blob(chunks, {
+        type: mimeType || 'video/webm',
+      })
+
+      if (blob.size === 0) {
+        setError('No video data was captured. Please try again.')
+        setIsProcessingVideo(false)
+        return
+      }
+
+      void processRecordedVideo(blob)
+    }
+
+    try {
+      recorder.start(1000)
+      recordingTimeoutRef.current = setTimeout(() => {
+        if (recorder.state === 'recording') {
+          recorder.stop()
+        }
+      }, VIDEO_CAPTURE_DURATION_MS)
+
+      setScanStatus('Recording a short attendance video. The app will extract frames and match faces automatically.')
+    } catch (err) {
+      console.error('[scanner] MediaRecorder start failed', err)
+      mediaRecorderRef.current = null
+      sessionActiveRef.current = false
+      setSessionActive(false)
+      stopCamera()
+      setError('Failed to start video recording in this browser. Falling back to live detection is recommended.')
+      startDetectionLoop()
     }
   }
 
@@ -646,6 +797,14 @@ export default function ScannerPage() {
 
   useEffect(() => {
     return () => {
+      if (recordingTimeoutRef.current) {
+        clearTimeout(recordingTimeoutRef.current)
+      }
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+        mediaRecorderRef.current.stop()
+      }
+      mediaRecorderRef.current = null
+      recordedChunksRef.current = []
       stopCamera()
     }
   }, [])
@@ -666,14 +825,14 @@ export default function ScannerPage() {
   }
 
   return (
-    <DashboardShell title="Attendance Scanner" subtitle="Realtime face recognition session">
+    <DashboardShell title="Attendance Scanner" subtitle="Recorded video frame-by-frame recognition session">
       <main className="space-y-6">
         <section className="glass-card p-6 md:p-8">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-primary">Realtime Recognition</p>
+              <p className="text-xs font-semibold uppercase tracking-wider text-primary">Frame-by-Frame Recognition</p>
               <h1 className="mt-2 text-3xl font-semibold text-foreground md:text-4xl">Smart Attendance Scanner</h1>
-              <p className="mt-2 text-sm text-muted-foreground">Start a session, detect faces live, review attendance, and save accurate results.</p>
+              <p className="mt-2 text-sm text-muted-foreground">Record a short video, extract frames one by one, filter poor detections, and save accurate attendance results.</p>
             </div>
             <Link href="/">
               <Button variant="outline" className="rounded-xl border-border/70 bg-card/80">Back to Home</Button>
@@ -686,22 +845,22 @@ export default function ScannerPage() {
           <Input value={subjectName} onChange={(e) => setSubjectName(e.target.value)} placeholder="Subject" />
           <Input type="date" value={attendanceDate} onChange={(e) => setAttendanceDate(e.target.value)} />
           {!sessionActive ? (
-            <Button onClick={startAttendanceSession} disabled={!modelsLoaded || isSaving}>Start Scan</Button>
+            <Button onClick={startAttendanceSession} disabled={!modelsLoaded || isSaving || isProcessingVideo}>Start Video Scan</Button>
           ) : (
-            <Button variant="destructive" onClick={stopAttendanceSession} disabled={isSaving}>
+            <Button variant="destructive" onClick={stopAttendanceSession} disabled={isSaving || isProcessingVideo}>
               Stop Scan
             </Button>
           )}
           <div className="flex gap-2">
-            <Button onClick={saveAttendance} disabled={sessionActive || isSaving || attendanceSaved || !scanCompleted} className="flex-1">
+            <Button onClick={saveAttendance} disabled={sessionActive || isSaving || isProcessingVideo || attendanceSaved || !scanCompleted} className="flex-1">
               {isSaving ? 'Saving...' : 'Save Attendance'}
             </Button>
-            <Button variant="outline" onClick={clearPreview} disabled={sessionActive || isSaving}>Clear</Button>
+            <Button variant="outline" onClick={clearPreview} disabled={sessionActive || isSaving || isProcessingVideo}>Clear</Button>
           </div>
         </div>
 
         <div>
-          <Button variant="destructive" onClick={clearSavedAttendance} disabled={sessionActive || isSaving}>
+          <Button variant="destructive" onClick={clearSavedAttendance} disabled={sessionActive || isSaving || isProcessingVideo}>
             Clear All Saved Attendance Data
           </Button>
         </div>
@@ -709,7 +868,9 @@ export default function ScannerPage() {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
           <div className="glass-card p-3">
             <p className="text-xs text-muted-foreground">Session</p>
-            <p className="text-sm font-medium text-foreground">{sessionActive ? 'Running' : 'Stopped'}</p>
+            <p className="text-sm font-medium text-foreground">
+              {isProcessingVideo ? 'Processing Video' : sessionActive ? 'Recording Video' : 'Stopped'}
+            </p>
           </div>
           <div className="glass-card border-green-300 bg-green-50/80 p-3">
             <p className="text-xs text-muted-foreground">{attendanceSaved ? 'Present (Saved)' : scanCompleted ? 'Present (Preview)' : 'Detected'}</p>
@@ -729,6 +890,12 @@ export default function ScannerPage() {
           <p className="text-xs text-muted-foreground">Status</p>
           <p className="text-sm font-medium text-foreground">{scanStatus}</p>
         </div>
+
+        {isProcessingVideo && (
+          <div className="p-4 bg-blue-500/10 border border-blue-500/20 rounded-xl text-blue-700">
+            Processing recorded video frame by frame. Please wait until the scan completes.
+          </div>
+        )}
 
         {error && (
           <div className="mb-4 p-4 bg-destructive/10 border border-destructive/20 rounded text-destructive">
@@ -759,7 +926,7 @@ export default function ScannerPage() {
                 />
                 {!cameraActive && (
                   <div className="absolute inset-0 flex items-center justify-center">
-                    <p className="text-muted-foreground">Camera is off. Click Start Scan.</p>
+                    <p className="text-muted-foreground">Camera is off. Click Start Video Scan.</p>
                   </div>
                 )}
               </div>
@@ -788,10 +955,10 @@ export default function ScannerPage() {
         <div className="glass-card p-6">
           <h2 className="text-xl font-semibold text-foreground mb-4">Attendance Preview</h2>
           {!sessionActive && !scanCompleted && !attendanceSaved ? (
-            <p className="text-sm text-muted-foreground">Start scan to begin attendance. After scanning, you can review and edit before saving.</p>
+            <p className="text-sm text-muted-foreground">Start a video scan to begin attendance. After the video is processed, you can review and edit before saving.</p>
           ) : sessionActive ? (
             <div>
-              <p className="text-sm text-blue-700 font-medium mb-3">Scanning in progress — {presentCount} face(s) recognised so far. Stop scan to review.</p>
+              <p className="text-sm text-blue-700 font-medium mb-3">Recording in progress — {presentCount} face(s) recognised so far. Stop scan to process the video.</p>
               {presentCount > 0 && (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                   {allStudents
