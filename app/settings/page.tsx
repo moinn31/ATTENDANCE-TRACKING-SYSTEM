@@ -1,9 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
-import { isMissingSessionError } from '@/lib/supabase/auth-errors'
+import { useEffect, useState } from 'react'
 import { DashboardShell } from '@/components/dashboard-shell'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -60,48 +57,11 @@ export default function SettingsPage() {
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS)
   const [loading, setLoading] = useState(true)
   const [saved, setSaved] = useState(false)
-  const router = useRouter()
-  const [supabase] = useState(() => createClient())
-
-  const supabaseHost = useMemo(() => {
-    try {
-      const value = process.env.NEXT_PUBLIC_SUPABASE_URL
-      return value ? new URL(value).hostname : 'Not configured'
-    } catch {
-      return 'Invalid URL in env'
-    }
-  }, [])
 
   useEffect(() => {
-    const getUser = async () => {
-      try {
-        const {
-          data: { user },
-          error,
-        } = await supabase.auth.getUser()
-
-        if (error && !isMissingSessionError(error.message)) {
-          await supabase.auth.signOut()
-          router.replace('/auth/login')
-          return
-        }
-
-        if (!user) {
-          router.replace('/auth/login')
-          return
-        }
-
-        setSettings(loadSavedSettings())
-      } catch {
-        await supabase.auth.signOut()
-        router.replace('/auth/login')
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    void getUser()
-  }, [router, supabase])
+    setSettings(loadSavedSettings())
+    setLoading(false)
+  }, [])
 
   const updateSetting = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
     setSettings((prev) => ({ ...prev, [key]: value }))
@@ -141,7 +101,7 @@ export default function SettingsPage() {
             </div>
             <div className="flex items-center gap-2">
               <Badge variant="outline">Local Profile</Badge>
-              <Badge className="bg-[#2b5c9e] text-white hover:bg-[#254f87]">Supabase: {supabaseHost}</Badge>
+              <Badge className="bg-[#2b5c9e] text-white hover:bg-[#254f87]">PostgreSQL</Badge>
             </div>
           </div>
         </section>

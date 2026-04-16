@@ -1,9 +1,6 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
-import { formatDatabaseActionError, isMissingSessionError } from '@/lib/supabase/auth-errors'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import Link from 'next/link'
@@ -23,73 +20,83 @@ interface Student {
 export default function StudentsPage() {
   const [students, setStudents] = useState<Student[]>([])
   const [loading, setLoading] = useState(true)
-  const [user, setUser] = useState<any>(null)
   const [showAddForm, setShowAddForm] = useState(false)
   const [newStudent, setNewStudent] = useState({ name: '', roll_number: '' })
   const [enrollingStudentId, setEnrollingStudentId] = useState<string | null>(null)
   const [enrollingStudentName, setEnrollingStudentName] = useState<string>('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const router = useRouter()
-  const [supabase] = useState(() => createClient())
+
+  const getAuthHeaders = (isJson = false) => {
+    // Safe access to localStorage (might not be available during SSR)
+    const token = typeof window !== 'undefined' ? window.localStorage.getItem('token') : null
+    const headers: Record<string, string> = {}
+
+    if (isJson) {
+      headers['Content-Type'] = 'application/json'
+    }
+
+    if (token) {
+      headers.Authorization = `Bearer ${token}`
+    }
+
+    return headers
+  }
 
   const fetchStudents = async () => {
     try {
-      const response = await fetch('/api/students', { cache: 'no-store' })
+      setLoading(true)
+      
+      // Check if token exists before attempting to fetch
+      const token = typeof window !== 'undefined' ? window.localStorage.getItem('token') : null
+      
+      if (!token) {
+        setError('🔐 Not authenticated. Please login first.')
+        setStudents([])
+        return
+      }
+      
+      const response = await fetch('/api/students', {
+        cache: 'no-store',
+        headers: getAuthHeaders(),
+      })
       const payload = await response.json()
 
       if (!response.ok) {
+        if (response.status === 401) {
+          setError('🔐 Authentication failed. Please login again.')
+          if (typeof window !== 'undefined') {
+            window.localStorage.removeItem('token')
+          }
+          setStudents([])
+          return
+        }
         throw new Error(payload.error || 'Failed to load students')
       }
 
       setStudents(payload.data || [])
+      setError(null)
     } catch (err) {
       console.error('[v0] Error fetching students:', err)
       setError(err instanceof Error ? err.message : 'Failed to fetch students')
+    } finally {
+      setLoading(false)
     }
   }
 
-  // Check authentication
+  // Check authentication on component mount
   useEffect(() => {
-    const getUser = async () => {
-      try {
-        const {
-          data: { user },
-          error,
-        } = await supabase.auth.getUser()
-        
-        if (error && !isMissingSessionError(error.message)) {
-          console.error('Auth error:', error.message)
-          await supabase.auth.signOut()
-          setLoading(false)
-          router.replace('/auth/login')
-          return
-        }
-
-        if (!user) {
-          setLoading(false)
-          router.replace('/auth/login')
-          return
-        }
-
-        setUser(user)
-        setLoading(false)
-      } catch (error) {
-        console.error('Failed to get user:', error)
-        await supabase.auth.signOut()
-        setLoading(false)
-        router.replace('/auth/login')
-      }
+    if (typeof window === 'undefined') return
+    
+    const token = window.localStorage.getItem('token')
+    if (!token) {
+      setError('🔐 Authentication Required: Please login to manage students')
     }
-
-    void getUser()
-  }, [router, supabase])
+  }, [])
 
   useEffect(() => {
-    if (!loading) {
-      fetchStudents()
-    }
-  }, [loading])
+    void fetchStudents()
+  }, [])
 
   const handleAddStudent = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -103,24 +110,26 @@ export default function StudentsPage() {
       setSaving(true)
       setError(null)
 
-      const { data, error: insertError } = await supabase
-        .from('students')
-        .insert({
+      const response = await fetch('/api/students', {
+        method: 'POST',
+        headers: getAuthHeaders(true),
+        body: JSON.stringify({
           name: newStudent.name.trim(),
           roll_number: newStudent.roll_number.trim(),
-        })
-        .select('id, name, roll_number')
-        .single()
+        }),
+      })
 
-      if (insertError || !data) {
-        throw new Error(formatDatabaseActionError(insertError?.message || 'Failed to add student'))
+      const payload = await response.json()
+
+      if (!response.ok) {
+        throw new Error(payload.error || 'Failed to add student')
       }
 
       setStudents((prev) => [
         {
-          id: data.id,
-          name: data.name,
-          roll_number: data.roll_number,
+          id: payload.data.id,
+          name: payload.data.name,
+          roll_number: payload.data.roll_number,
           face_enrolled: false,
         },
         ...prev,
@@ -140,10 +149,14 @@ export default function StudentsPage() {
       setSaving(true)
       setError(null)
 
-      const { error: deleteError } = await supabase.from('students').delete().eq('id', id)
+      const response = await fetch(`/api/students/${id}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders(),
+      })
+      const payload = await response.json()
 
-      if (deleteError) {
-        throw new Error(formatDatabaseActionError(deleteError.message || 'Failed to delete student'))
+      if (!response.ok) {
+        throw new Error(payload.error || 'Failed to delete student')
       }
 
       setStudents((prev) => prev.filter((student) => student.id !== id))
@@ -164,37 +177,62 @@ export default function StudentsPage() {
     try {
       setSaving(true)
       setError(null)
+      
+      console.log('[students] Starting face enrollment save for student:', faceData.studentId)
 
-      const serializedDescriptor = JSON.stringify(faceData.descriptor)
-
-      const { error: deleteOldError } = await supabase
-        .from('face_embeddings')
-        .delete()
-        .eq('student_id', faceData.studentId)
-
-      if (deleteOldError) {
-        throw new Error(formatDatabaseActionError(deleteOldError.message || 'Failed to clear previous face enrollment'))
-      }
-
-      const { error: insertError } = await supabase.from('face_embeddings').insert({
-        student_id: faceData.studentId,
-        embedding_vector: serializedDescriptor,
+      const response = await fetch(`/api/students/${faceData.studentId}/face-enrollment`, {
+        method: 'POST',
+        headers: getAuthHeaders(true),
+        body: JSON.stringify({
+          descriptor: Array.from(faceData.descriptor),
+        }),
       })
 
-      if (insertError) {
-        throw new Error(formatDatabaseActionError(insertError.message || 'Failed to save face enrollment'))
+      const payload = await response.json()
+
+      if (!response.ok) {
+        console.error('[students] Enrollment API error:', payload.error)
+        throw new Error(payload.error || 'Failed to save face enrollment')
       }
+      
+      console.log('[students] Face enrollment saved successfully, refetching students list')
 
-      setStudents((prev) =>
-        prev.map((student) =>
-          student.id === faceData.studentId ? { ...student, face_enrolled: true } : student,
-        ),
-      )
+      // Refetch the entire students list from API to ensure database state is reflected
+      const refreshResponse = await fetch('/api/students', {
+        cache: 'no-store',
+        headers: getAuthHeaders(),
+      })
+      
+      if (refreshResponse.ok) {
+        const refreshPayload = await refreshResponse.json()
+        const updatedStudents = refreshPayload.data || []
+        console.log('[students] Students list refreshed, updated count:', updatedStudents.length)
+        
+        // Update with fresh data from database
+        setStudents(updatedStudents)
+        console.log('[students] Students state updated from database')
+      } else {
+        console.warn('[students] Could not refresh students, using local update')
+        // Fallback to local update
+        setStudents((prev) =>
+          prev.map((student) => {
+            if (student.id === faceData.studentId) {
+              console.log('[students] Marking student as face_enrolled:', student.id)
+              return { ...student, face_enrolled: true }
+            }
+            return student
+          }),
+        )
+      }
+      
+      // Show success message
+      console.log('[students] Enrollment completed, closing modal')
 
+      // Close modal after successful enrollment
       setEnrollingStudentId(null)
       setEnrollingStudentName('')
     } catch (err) {
-      console.error('[v0] Error saving face data:', err)
+      console.error('[students] Error saving face data:', err)
       setError(err instanceof Error ? err.message : 'Failed to save face enrollment')
     } finally {
       setSaving(false)

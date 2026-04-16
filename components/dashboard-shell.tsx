@@ -1,9 +1,9 @@
 'use client'
 
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, type ReactNode } from 'react'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
-import { Bell, ChevronDown, LayoutDashboard, UserRound, BarChart3, Settings, Search, Users } from 'lucide-react'
+import { usePathname, useRouter } from 'next/navigation'
+import { Bell, ChevronDown, LayoutDashboard, UserRound, BarChart3, Settings, Search, Users, Camera } from 'lucide-react'
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
@@ -25,13 +25,13 @@ import {
 } from '@/components/ui/sidebar'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
-import { createClient } from '@/lib/supabase/client'
 
 const navigationItems = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/scanner', label: 'Attendance', icon: UserRound },
   { href: '/students', label: 'Students', icon: Users },
   { href: '/analytics', label: 'Reports', icon: BarChart3 },
+  { href: '/camera-check', label: 'Camera Check', icon: Camera },
   { href: '/settings', label: 'Settings', icon: Settings },
 ]
 
@@ -44,41 +44,12 @@ type DashboardShellProps = {
 
 export function DashboardShell({ title, subtitle, children, headerActions }: DashboardShellProps) {
   const pathname = usePathname()
-  const [supabase] = useState(() => createClient())
-  const [profile, setProfile] = useState({
+  const router = useRouter()
+  const profile = {
     name: 'Admin',
     subTitle: 'Faculty',
     imageUrl: 'https://i.pravatar.cc/100?img=12',
-  })
-
-  useEffect(() => {
-    const loadProfile = async () => {
-      try {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser()
-
-        if (!user) {
-          return
-        }
-
-        const fullName = typeof user.user_metadata?.full_name === 'string' ? user.user_metadata.full_name.trim() : ''
-        const department = typeof user.user_metadata?.department === 'string' ? user.user_metadata.department.trim() : ''
-        const role = typeof user.user_metadata?.role === 'string' ? user.user_metadata.role.trim() : ''
-        const photoUrl = typeof user.user_metadata?.photo_url === 'string' ? user.user_metadata.photo_url.trim() : ''
-
-        setProfile({
-          name: fullName || user.email || 'Admin',
-          subTitle: department || role || 'Faculty',
-          imageUrl: photoUrl || 'https://i.pravatar.cc/100?img=12',
-        })
-      } catch {
-        // Keep default profile data if auth metadata is unavailable.
-      }
-    }
-
-    void loadProfile()
-  }, [supabase])
+  }
 
   const avatarFallback = useMemo(() => {
     const trimmed = profile.name.trim()
@@ -93,6 +64,13 @@ export function DashboardShell({ title, subtitle, children, headerActions }: Das
 
     return `${parts[0][0] ?? ''}${parts[1][0] ?? ''}`.toUpperCase() || 'AD'
   }, [profile.name])
+
+  useEffect(() => {
+    const token = window.localStorage.getItem('token')
+    if (!token) {
+      router.replace('/auth/login')
+    }
+  }, [router])
 
   return (
     <SidebarProvider defaultOpen>

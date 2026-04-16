@@ -1,20 +1,14 @@
-import { createClient } from '@/lib/supabase/server'
+import pool from '@/lib/db.js'
+import { verifyToken } from '@/lib/auth.js'
 import { NextRequest, NextResponse } from 'next/server'
 
 interface RouteContext {
   params: Promise<{ id: string }>
 }
 
-export async function DELETE(_request: NextRequest, context: RouteContext) {
+export async function DELETE(request: NextRequest, context: RouteContext) {
   try {
-    const supabase = await createClient()
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    verifyToken(request)
 
     const { id } = await context.params
 
@@ -22,14 +16,20 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: 'Missing student id' }, { status: 400 })
     }
 
-    const { error } = await supabase.from('students').delete().eq('id', id)
-
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
-    }
+    await pool.query(
+      `
+        delete from public.students
+        where id = $1
+      `,
+      [id],
+    )
 
     return NextResponse.json({ success: true })
   } catch (error) {
+    if (error instanceof Error && error.message === 'Unauthorized') {
+      return NextResponse.json({ error: error.message }, { status: 401 })
+    }
+
     console.error('[v0] Error deleting student:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }

@@ -1,4 +1,5 @@
-import { createClient } from '@/lib/supabase/server'
+import pool from '@/lib/db.js'
+import { verifyToken } from '@/lib/auth.js'
 import { NextRequest, NextResponse } from 'next/server'
 
 type AttendanceRow = {
@@ -13,11 +14,6 @@ type AttendanceRow = {
   timestamp?: string | null
   marked_at?: string | null
   created_at?: string | null
-  students?: {
-    name?: string | null
-    roll_number?: string | null
-    enrollment_number?: string | null
-  } | null
 }
 
 const getLocalDate = () => {
@@ -26,82 +22,55 @@ const getLocalDate = () => {
   return local.toISOString().split('T')[0]
 }
 
-const isMissingSessionColumnError = (error: unknown): boolean => {
-  const message = typeof error === 'object' && error && 'message' in error
-    ? String((error as { message: unknown }).message)
-    : ''
-
-  return /class_name|subject_name|schema cache|does not exist/i.test(message)
-}
-
 export async function GET(request: NextRequest) {
   try {
-    const supabase = await createClient()
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    verifyToken(request)
 
     const { searchParams } = new URL(request.url)
     const date = searchParams.get('date') || getLocalDate()
     const className = searchParams.get('className')
     const subjectName = searchParams.get('subjectName')
 
-    let query = supabase
-      .from('attendance_records')
-      .select('id, student_id, date, status, class_name, subject_name, detected_confidence, timestamp, created_at, students(name, roll_number)')
-      .eq('date', date)
+    const filters: string[] = ['ar.date = $1']
+    const values: unknown[] = [date]
 
     if (className) {
-      query = query.eq('class_name', className)
+      values.push(className)
+      filters.push(`ar.class_name = $${values.length}`)
     }
 
     if (subjectName) {
-      query = query.eq('subject_name', subjectName)
+      values.push(subjectName)
+      filters.push(`ar.subject_name = $${values.length}`)
     }
 
-    const { data, error } = await query.order('timestamp', { ascending: false })
+    const { rows } = await pool.query<AttendanceRow & { student_name: string; roll_number: string | null }>(
+      `
+        select
+          ar.id,
+          ar.student_id,
+          ar.date,
+          ar.status,
+          ar.class_name,
+          ar.subject_name,
+          ar.detected_confidence,
+          ar.timestamp,
+          ar.created_at,
+          s.name as student_name,
+          s.roll_number
+        from public.attendance_records ar
+        inner join public.students s on s.id = ar.student_id
+        where ${filters.join(' and ')}
+        order by ar.timestamp desc
+      `,
+      values,
+    )
 
-    if (error && isMissingSessionColumnError(error)) {
-      const { data: legacyData, error: legacyError } = await supabase
-        .from('attendance_records')
-        .select('id, student_id, date, status, detected_confidence, timestamp, created_at, students(name, roll_number)')
-        .eq('date', date)
-        .order('timestamp', { ascending: false })
-
-      if (legacyError) {
-        return NextResponse.json({ error: legacyError.message }, { status: 500 })
-      }
-
-      const attendance = ((legacyData ?? []) as AttendanceRow[]).map((row) => ({
-        id: row.id,
-        student_id: row.student_id,
-        student_name: row.students?.name ?? 'Unknown',
-        roll_number: row.students?.roll_number ?? row.students?.enrollment_number ?? null,
-        date: row.date,
-        class_name: null,
-        subject_name: null,
-        status: row.status,
-        confidence: row.detected_confidence ?? row.confidence ?? null,
-        marked_at: row.timestamp ?? row.marked_at ?? row.created_at ?? null,
-      }))
-
-      return NextResponse.json({ data: attendance, legacySchema: true })
-    }
-
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
-    }
-
-    const attendance = ((data ?? []) as AttendanceRow[]).map((row) => ({
+    const attendance = rows.map((row) => ({
       id: row.id,
       student_id: row.student_id,
-      student_name: row.students?.name ?? 'Unknown',
-      roll_number: row.students?.roll_number ?? row.students?.enrollment_number ?? null,
+      student_name: row.student_name ?? 'Unknown',
+      roll_number: row.roll_number ?? null,
       date: row.date,
       class_name: row.class_name ?? null,
       subject_name: row.subject_name ?? null,
@@ -112,6 +81,10 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ data: attendance })
   } catch (error) {
+    if (error instanceof Error && error.message === 'Unauthorized') {
+      return NextResponse.json({ error: error.message }, { status: 401 })
+    }
+
     console.error('[v0] Error fetching attendance:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
@@ -119,15 +92,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient()
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    verifyToken(request)
 
     const body = await request.json()
     const { student_id, status, confidence, date, class_name, subject_name } = body
@@ -140,139 +105,101 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid status' }, { status: 400 })
     }
 
-    const attendanceDate = date || getLocalDate()
+    const attendanceDate = typeof date === 'string' && date.trim() ? date.trim() : getLocalDate()
+    const normalizedClassName = typeof class_name === 'string' && class_name.trim() ? class_name.trim() : null
+    const normalizedSubjectName = typeof subject_name === 'string' && subject_name.trim() ? subject_name.trim() : null
+    const createdByUid = typeof body?.created_by_uid === 'string' && body.created_by_uid.trim() ? body.created_by_uid.trim() : 'system'
 
-    let existingQuery = supabase
-      .from('attendance_records')
-      .select('id, status')
-      .eq('student_id', student_id)
-      .eq('date', attendanceDate)
+    const { rows: existingRows } = await pool.query<{ id: string; status: 'present' | 'absent' | 'late' }>(
+      `
+        select id, status
+        from public.attendance_records
+        where student_id = $1
+          and date = $2
+          and (
+            ($3::text is null and class_name is null) or class_name = $3
+          )
+          and (
+            ($4::text is null and subject_name is null) or subject_name = $4
+          )
+        limit 1
+      `,
+      [student_id, attendanceDate, normalizedClassName, normalizedSubjectName],
+    )
 
-    if (typeof class_name === 'string' && class_name.trim()) {
-      existingQuery = existingQuery.eq('class_name', class_name.trim())
-    } else {
-      existingQuery = existingQuery.is('class_name', null)
-    }
-
-    if (typeof subject_name === 'string' && subject_name.trim()) {
-      existingQuery = existingQuery.eq('subject_name', subject_name.trim())
-    } else {
-      existingQuery = existingQuery.is('subject_name', null)
-    }
-
-    let { data: existing, error: existingError } = await existingQuery.maybeSingle()
-
-    if (existingError && isMissingSessionColumnError(existingError)) {
-      ;({ data: existing, error: existingError } = await supabase
-        .from('attendance_records')
-        .select('id, status')
-        .eq('student_id', student_id)
-        .eq('date', attendanceDate)
-        .maybeSingle())
-    }
-
-    if (existingError) {
-      return NextResponse.json({ error: existingError.message }, { status: 500 })
-    }
+    const existing = existingRows[0]
 
     if (existing) {
-      const existingRow = existing as { id: string; status: 'present' | 'absent' | 'late' }
-
-      if (existingRow.status === status) {
-        return NextResponse.json({ data: existingRow, duplicate: true })
+      if (existing.status === status) {
+        return NextResponse.json({ data: existing, duplicate: true })
       }
 
-      const updatePayload: Record<string, unknown> = {
-        status,
-        class_name: class_name ?? null,
-        subject_name: subject_name ?? null,
-        detected_confidence: confidence ?? 0,
-        timestamp: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      }
+      await pool.query(
+        `
+          update public.attendance_records
+          set
+            status = $2,
+            class_name = $3,
+            subject_name = $4,
+            detected_confidence = $5,
+            timestamp = now(),
+            updated_at = now(),
+            created_by_uid = $6
+          where id = $1
+        `,
+        [existing.id, status, normalizedClassName, normalizedSubjectName, confidence ?? 0, createdByUid],
+      )
 
-      let { data: updated, error: updateError } = await supabase
-        .from('attendance_records')
-        .update(updatePayload)
-        .eq('id', existingRow.id)
-        .select('*')
-        .single()
-
-      if (updateError && isMissingSessionColumnError(updateError)) {
-        ;({ data: updated, error: updateError } = await supabase
-          .from('attendance_records')
-          .update({
-            status,
-            detected_confidence: confidence ?? 0,
-            timestamp: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', existingRow.id)
-          .select('*')
-          .single())
-      }
-
-      if (updateError) {
-        return NextResponse.json({ error: updateError.message }, { status: 500 })
-      }
-
-      const updatedRecord = {
-        id: (updated as AttendanceRow).id,
-        student_id,
-        date: attendanceDate,
-        status,
-        confidence: confidence ?? 0,
-        marked_by: user.id,
-        marked_at: new Date().toISOString(),
-      }
-
-      return NextResponse.json({ data: updatedRecord, updated: true })
-    }
-
-    let { data: created, error: insertError } = await supabase
-      .from('attendance_records')
-      .insert({
-        student_id,
-        date: attendanceDate,
-        status,
-          class_name: class_name ?? null,
-          subject_name: subject_name ?? null,
-        detected_confidence: confidence ?? 0,
-        created_by: user.id,
-      })
-      .select('*')
-      .single()
-
-    if (insertError && isMissingSessionColumnError(insertError)) {
-      ;({ data: created, error: insertError } = await supabase
-        .from('attendance_records')
-        .insert({
+      return NextResponse.json({
+        data: {
+          id: existing.id,
           student_id,
           date: attendanceDate,
           status,
-          detected_confidence: confidence ?? 0,
-          created_by: user.id,
-        })
-        .select('*')
-        .single())
+          confidence: confidence ?? 0,
+          marked_by: createdByUid,
+          marked_at: new Date().toISOString(),
+        },
+        updated: true,
+      })
     }
 
-    if (insertError) {
-      return NextResponse.json({ error: insertError.message }, { status: 500 })
-    }
+    const { rows } = await pool.query<{ id: string }>(
+      `
+        insert into public.attendance_records (
+          student_id,
+          date,
+          status,
+          class_name,
+          subject_name,
+          detected_confidence,
+          created_by_uid
+        )
+        values ($1, $2, $3, $4, $5, $6, $7)
+        returning id
+      `,
+      [student_id, attendanceDate, status, normalizedClassName, normalizedSubjectName, confidence ?? 0, createdByUid],
+    )
 
-    const record = {
-      id: (created as AttendanceRow).id,
-      student_id,
-      date: attendanceDate,
-      status,
-      confidence: confidence ?? 0,
-      marked_by: user.id,
-      marked_at: new Date().toISOString(),
-    }
-
-    return NextResponse.json({ data: record }, { status: 201 })
+    return NextResponse.json(
+      {
+        data: {
+          id: rows[0].id,
+          student_id,
+          date: attendanceDate,
+          status,
+          confidence: confidence ?? 0,
+          marked_by: createdByUid,
+          marked_at: new Date().toISOString(),
+        },
+      },
+      { status: 201 },
+    )
   } catch (error) {
+    if (error instanceof Error && error.message === 'Unauthorized') {
+      return NextResponse.json({ error: error.message }, { status: 401 })
+    }
+
     console.error('[v0] Error marking attendance:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
@@ -280,57 +207,39 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
-    const supabase = await createClient()
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    verifyToken(request)
 
     const body = await request.json().catch(() => ({}))
     const all = Boolean(body?.all)
     const date = typeof body?.date === 'string' ? body.date : null
-    const className = typeof body?.class_name === 'string' ? body.class_name : null
-    const subjectName = typeof body?.subject_name === 'string' ? body.subject_name : null
+    const className = typeof body?.class_name === 'string' ? body.class_name.trim() : null
+    const subjectName = typeof body?.subject_name === 'string' ? body.subject_name.trim() : null
 
-    let query = supabase.from('attendance_records').delete().eq('created_by', user.id)
-
-    if (!all) {
-      if (!date) {
-        return NextResponse.json({ error: 'date is required when all is false' }, { status: 400 })
-      }
-
-      query = query.eq('date', date)
-
-      if (className) {
-        query = query.eq('class_name', className)
-      }
-
-      if (subjectName) {
-        query = query.eq('subject_name', subjectName)
-      }
+    if (all) {
+      await pool.query('delete from public.attendance_records')
+      return NextResponse.json({ success: true })
     }
 
-    let { error } = await query
-
-    if (error && isMissingSessionColumnError(error) && !all) {
-      let fallback = supabase
-        .from('attendance_records')
-        .delete()
-        .eq('created_by', user.id)
-        .eq('date', date)
-      ;({ error } = await fallback)
+    if (!date) {
+      return NextResponse.json({ error: 'date is required when all is false' }, { status: 400 })
     }
 
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
-    }
+    await pool.query(
+      `
+        delete from public.attendance_records
+        where date = $1
+          and ($2::text is null or class_name = $2)
+          and ($3::text is null or subject_name = $3)
+      `,
+      [date, className, subjectName],
+    )
 
     return NextResponse.json({ success: true })
   } catch (error) {
+    if (error instanceof Error && error.message === 'Unauthorized') {
+      return NextResponse.json({ error: error.message }, { status: 401 })
+    }
+
     console.error('[v0] Error clearing attendance:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }

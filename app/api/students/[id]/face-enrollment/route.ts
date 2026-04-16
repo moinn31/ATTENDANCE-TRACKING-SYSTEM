@@ -1,4 +1,5 @@
-import { createClient } from '@/lib/supabase/server'
+import pool from '@/lib/db.js'
+import { verifyToken } from '@/lib/auth.js'
 import { NextRequest, NextResponse } from 'next/server'
 
 interface RouteContext {
@@ -7,15 +8,7 @@ interface RouteContext {
 
 export async function POST(request: NextRequest, context: RouteContext) {
   try {
-    const supabase = await createClient()
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    verifyToken(request)
 
     const { id: studentId } = await context.params
     const body = await request.json()
@@ -27,26 +20,28 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     const serialized = JSON.stringify(descriptor)
 
-    const { error: deleteOldError } = await supabase
-      .from('face_embeddings')
-      .delete()
-      .eq('student_id', studentId)
+    await pool.query(
+      `
+        delete from public.face_embeddings
+        where student_id = $1
+      `,
+      [studentId],
+    )
 
-    if (deleteOldError) {
-      return NextResponse.json({ error: deleteOldError.message }, { status: 500 })
-    }
-
-    const { error: insertError } = await supabase.from('face_embeddings').insert({
-      student_id: studentId,
-      embedding_vector: serialized,
-    })
-
-    if (insertError) {
-      return NextResponse.json({ error: insertError.message }, { status: 500 })
-    }
+    await pool.query(
+      `
+        insert into public.face_embeddings (student_id, embedding_vector)
+        values ($1, $2)
+      `,
+      [studentId, serialized],
+    )
 
     return NextResponse.json({ success: true })
   } catch (error) {
+    if (error instanceof Error && error.message === 'Unauthorized') {
+      return NextResponse.json({ error: error.message }, { status: 401 })
+    }
+
     console.error('[v0] Error saving face enrollment:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }

@@ -1,70 +1,17 @@
 'use client'
 
-import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
-import { isMissingSessionError } from '@/lib/supabase/auth-errors'
-import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { DashboardShell } from '@/components/dashboard-shell'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { BarChart3, CalendarDays, Clock3, Clock10, GraduationCap, LogOut, Users, Database, Brain, Cloud } from 'lucide-react'
 
 export default function Home() {
-  const [user, setUser] = useState<any>(null)
-  const [loading, setLoading] = useState(true)
   const router = useRouter()
-  const [supabase] = useState(() => createClient())
 
-  useEffect(() => {
-    const getUser = async () => {
-      try {
-        const {
-          data: { user },
-          error,
-        } = await supabase.auth.getUser()
-        
-        if (error && !isMissingSessionError(error.message)) {
-          console.error('Auth error:', error.message)
-          await supabase.auth.signOut()
-          setUser(null)
-          setLoading(false)
-          router.replace('/auth/login')
-          return
-        }
-
-        setUser(user)
-        setLoading(false)
-
-        if (!user) {
-          router.replace('/auth/login')
-        }
-      } catch (error) {
-        console.error('Failed to get user:', error)
-        await supabase.auth.signOut()
-        setUser(null)
-        setLoading(false)
-        router.replace('/auth/login')
-      }
-    }
-
-    void getUser()
-  }, [router, supabase])
-
-  const handleLogout = async () => {
-    await supabase.auth.signOut()
-    router.push('/auth/login')
-  }
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <p>Loading...</p>
-      </div>
-    )
-  }
-
-  if (!user) {
-    return null
+  const handleLogout = () => {
+    window.localStorage.removeItem('token')
+    router.replace('/auth/login')
   }
 
   return (
@@ -172,7 +119,7 @@ export default function Home() {
               <div className="rounded-2xl bg-sky-100 p-3 text-sky-700"><Cloud className="size-5" /></div>
               <div>
                 <p className="text-sm font-semibold text-slate-800">Cloud Computing</p>
-                <p className="text-xs text-slate-500">Supabase, serverless APIs, deployment ready</p>
+                <p className="text-xs text-slate-500">PostgreSQL, serverless APIs, deployment ready</p>
               </div>
             </div>
             <p className="mt-4 text-sm text-slate-600">Authentication, APIs, and storage already fit a cloud-first workflow for classroom or institution use.</p>

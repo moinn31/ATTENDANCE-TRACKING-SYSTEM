@@ -249,8 +249,9 @@ export default function FaceEnrollmentModal({
   // Complete enrollment with captured frames
   const completeEnrollment = async (frames: any[]) => {
     try {
-      console.log('[v0] Starting enrollment completion with', frames.length, 'frames')
+      console.log('[face-enrollment] Starting enrollment completion with', frames.length, 'frames')
       setCapturing(false)
+      setGuidanceMessage('Processing and saving face data...')
       if (detectionIntervalRef.current) {
         clearInterval(detectionIntervalRef.current)
         detectionIntervalRef.current = null
@@ -281,19 +282,22 @@ export default function FaceEnrollmentModal({
         },
       }
 
-      console.log('[v0] Face enrollment data prepared:', {
+      console.log('[face-enrollment] Face enrollment data prepared:', {
         studentId,
         frameCount: frames.length,
         avgScore: avgScore.toFixed(3),
       })
 
+      console.log('[face-enrollment] Sending enrollment data to parent component')
       await onEnrollmentComplete(enrollmentData)
+      
+      console.log('[face-enrollment] Enrollment complete callback finished successfully')
 
       // Stop camera before showing success
       stopCamera()
       setSuccess(true)
     } catch (err) {
-      console.error('[v0] Error completing enrollment:', err)
+      console.error('[face-enrollment] Error completing enrollment:', err)
       setError('Error saving face data. Please try again.')
       finishingRef.current = false
       setCapturing(false)

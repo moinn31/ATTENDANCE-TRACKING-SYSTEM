@@ -1,11 +1,8 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import * as faceapi from 'face-api.js'
-import { createClient } from '@/lib/supabase/client'
-import { isMissingSessionError } from '@/lib/supabase/auth-errors'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { DashboardShell } from '@/components/dashboard-shell'
@@ -37,9 +34,6 @@ const FACE_MATCH_DISTANCE_THRESHOLD = 0.62
 const REQUIRED_CONFIRMATION_FRAMES = 3
 
 export default function ScannerPage() {
-  const router = useRouter()
-  const [supabase] = useState(() => createClient())
-
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const detectionIntervalRef = useRef<NodeJS.Timeout | null>(null)
@@ -52,7 +46,7 @@ export default function ScannerPage() {
   const sessionActiveRef = useRef(false)
   const modelsLoadedRef = useRef(false)
 
-  const [loading, setLoading] = useState(true)
+  const [loading] = useState(false)
   const [modelsLoaded, setModelsLoaded] = useState(false)
   const [cameraActive, setCameraActive] = useState(false)
   const [sessionActive, setSessionActive] = useState(false)
@@ -72,6 +66,22 @@ export default function ScannerPage() {
   const [scanStatus, setScanStatus] = useState('Ready to scan')
   const [lastScanAt, setLastScanAt] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+
+  const getAuthHeaders = (isJson = false) => {
+    // Safe access to localStorage (might not be available during SSR)
+    const token = typeof window !== 'undefined' ? window.localStorage.getItem('token') : null
+    const headers: Record<string, string> = {}
+
+    if (isJson) {
+      headers['Content-Type'] = 'application/json'
+    }
+
+    if (token) {
+      headers.Authorization = `Bearer ${token}`
+    }
+
+    return headers
+  }
 
   const getLocalDate = () => {
     const now = new Date()
@@ -116,16 +126,26 @@ export default function ScannerPage() {
   }
 
   const startCamera = async (): Promise<boolean> => {
+    // Check browser support
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setError('Camera API not supported on this browser. Please use a modern browser like Chrome, Firefox, Safari, or Edge.')
+      return false
+    }
+
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
+      // For mobile: request permissions explicitly
+      const constraints: MediaStreamConstraints = {
         video: {
-          width: { ideal: 1920 },
-          height: { ideal: 1080 },
-          frameRate: { ideal: 30, min: 24 },
-          facingMode: { ideal: 'environment' },
+          width: { ideal: 1280, max: 1920 },
+          height: { ideal: 720, max: 1080 },
+          frameRate: { ideal: 30, min: 15 },
+          facingMode: { ideal: 'environment' }, // Back camera for mobile
         },
         audio: false,
-      })
+      }
+
+      console.log('[scanner] Requesting camera access with constraints:', constraints)
+      const stream = await navigator.mediaDevices.getUserMedia(constraints)
 
       if (!videoRef.current) {
         stream.getTracks().forEach((track) => track.stop())
@@ -133,18 +153,26 @@ export default function ScannerPage() {
       }
 
       videoRef.current.srcObject = stream
-      await videoRef.current.play()
+      videoRef.current.onloadedmetadata = () => {
+        videoRef.current?.play().catch((err) => {
+          console.error('[scanner] Error playing video:', err)
+        })
+      }
       setCameraActive(true)
       setError(null)
       return true
     } catch (err) {
+      console.error('[scanner] Primary camera error:', err)
+
+      // Fallback 1: Try front camera
       try {
+        console.log('[scanner] Trying front camera fallback')
         const fallbackStream = await navigator.mediaDevices.getUserMedia({
           video: {
-            width: { ideal: 1920 },
-            height: { ideal: 1080 },
-            frameRate: { ideal: 30, min: 24 },
-            facingMode: 'user',
+            width: { ideal: 1280, max: 1920 },
+            height: { ideal: 720, max: 1080 },
+            frameRate: { ideal: 30, min: 15 },
+            facingMode: 'user', // Front camera
           },
           audio: false,
         })
@@ -155,24 +183,102 @@ export default function ScannerPage() {
         }
 
         videoRef.current.srcObject = fallbackStream
-        await videoRef.current.play()
+        videoRef.current.onloadedmetadata = () => {
+          videoRef.current?.play().catch((err) => {
+            console.error('[scanner] Error playing fallback video:', err)
+          })
+        }
         setCameraActive(true)
         setError(null)
         return true
-      } catch {
-        console.error('[scanner] camera error', err)
-        setError('Failed to access camera. Allow camera permissions and try again.')
-        return false
+      } catch (fallbackErr) {
+        console.error('[scanner] Front camera fallback failed:', fallbackErr)
+
+        // Fallback 2: Try generic camera without facingMode
+        try {
+          console.log('[scanner] Trying generic camera fallback')
+          const genericStream = await navigator.mediaDevices.getUserMedia({
+            video: {
+              width: { ideal: 1280, max: 1920 },
+              height: { ideal: 720, max: 1080 },
+              frameRate: { ideal: 30, min: 15 },
+            },
+            audio: false,
+          })
+
+          if (!videoRef.current) {
+            genericStream.getTracks().forEach((track) => track.stop())
+            return false
+          }
+
+          videoRef.current.srcObject = genericStream
+          videoRef.current.onloadedmetadata = () => {
+            videoRef.current?.play().catch((err) => {
+              console.error('[scanner] Error playing generic video:', err)
+            })
+          }
+          setCameraActive(true)
+          setError(null)
+          return true
+        } catch (genericErr) {
+          console.error('[scanner] All camera attempts failed:', genericErr)
+          const errorMessage = getDetailedCameraErrorMessage(err, fallbackErr, genericErr)
+          setError(errorMessage)
+          return false
+        }
       }
     }
   }
 
+  const getDetailedCameraErrorMessage = (err: any, fallbackErr: any, genericErr: any) => {
+    const errStr = JSON.stringify(err)?.toLowerCase() || ''
+    const isMobile = /android|iphone|ipad|ipod|mobile|webos|blackberry|windows phone/i.test(
+      navigator.userAgent
+    )
+
+    if (errStr.includes('permission') || fallbackErr?.toString().includes('NotAllowedError')) {
+      return '🔒 Camera permission denied. Please check your phone settings: Settings > Apps > This App > Permissions > Camera > Allow.'
+    }
+    if (errStr.includes('notfound') || fallbackErr?.toString().includes('NotFoundError')) {
+      return '📷 No camera found on this device. Please use a device with a camera.'
+    }
+    if (errStr.includes('notsupported') || fallbackErr?.toString().includes('NotSupportedError')) {
+      return '⚠️ Camera not supported in this browser. Try: Chrome, Firefox, Safari, or Edge.'
+    }
+    if (errStr.includes('secure') || fallbackErr?.toString().includes('secure')) {
+      return '🔐 HTTPS or localhost required for camera access. Please access via HTTPS.'
+    }
+    if (isMobile) {
+      return '📱 Camera access failed on mobile. Please: 1) Check app permissions, 2) Try a different browser (Chrome recommended), 3) Refresh the page.'
+    }
+    return '❌ Failed to access camera. Make sure your browser has permission to use the camera and try again.'
+  }
+
   const fetchStudents = async () => {
     try {
-      const response = await fetch('/api/students?includeEmbeddings=true', { cache: 'no-store' })
+      // Check if token exists before attempting to fetch
+      const token = typeof window !== 'undefined' ? window.localStorage.getItem('token') : null
+      
+      if (!token) {
+        setError('🔐 Not authenticated. Please login first.')
+        return
+      }
+
+      const response = await fetch('/api/students?includeEmbeddings=true', {
+        cache: 'no-store',
+        headers: getAuthHeaders(),
+      })
+      
       const payload = await response.json()
 
       if (!response.ok) {
+        if (response.status === 401) {
+          setError('🔐 Authentication failed. Please login again.')
+          if (typeof window !== 'undefined') {
+            window.localStorage.removeItem('token')
+          }
+          return
+        }
         throw new Error(payload.error || 'Failed to fetch students')
       }
 
@@ -421,7 +527,7 @@ export default function ScannerPage() {
 
       const response = await fetch('/api/attendance', {
         method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(true),
         body: JSON.stringify({ all: true }),
       })
 
@@ -462,7 +568,7 @@ export default function ScannerPage() {
 
         const response = await fetch('/api/attendance', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: getAuthHeaders(true),
           body: JSON.stringify({
             student_id: student.id,
             status,
@@ -489,6 +595,17 @@ export default function ScannerPage() {
     }
   }
 
+  // Check authentication on component mount
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    
+    const token = window.localStorage.getItem('token')
+    if (!token) {
+      setError('🔐 Authentication Required: Please login to access the scanner')
+      // Don't redirect - just show error in UI
+    }
+  }, [])
+
   useEffect(() => {
     const loadModels = async () => {
       try {
@@ -510,42 +627,8 @@ export default function ScannerPage() {
   }, [])
 
   useEffect(() => {
-    const getUser = async () => {
-      try {
-        const {
-          data: { user },
-          error,
-        } = await supabase.auth.getUser()
-
-        if (error && !isMissingSessionError(error.message)) {
-          await supabase.auth.signOut()
-          setLoading(false)
-          router.replace('/auth/login')
-          return
-        }
-
-        if (!user) {
-          setLoading(false)
-          router.replace('/auth/login')
-          return
-        }
-
-        setLoading(false)
-      } catch {
-        await supabase.auth.signOut()
-        setLoading(false)
-        router.replace('/auth/login')
-      }
-    }
-
-    void getUser()
-  }, [router, supabase])
-
-  useEffect(() => {
-    if (!loading) {
-      void fetchStudents()
-    }
-  }, [loading])
+    void fetchStudents()
+  }, [])
 
   useEffect(() => {
     if (enrolledStudents.length === 0) {

@@ -1,53 +1,61 @@
 # 🎓 Smart Attendance System
 
-[![GitHub](https://img.shields.io/badge/GitHub-moinn31%2FATTENDANCE--TRACKING--SYSTEM-blue?logo=github)](https://github.com/moinn31/ATTENDANCE-TRACKING-SYSTEM)
 [![Next.js](https://img.shields.io/badge/Next.js-16.1.6-black?logo=next.js)](https://nextjs.org/)
 [![React](https://img.shields.io/badge/React-19.2.4-blue?logo=react)](https://reactjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7.3-blue?logo=typescript)](https://www.typescriptlang.org/)
-[![Supabase](https://img.shields.io/badge/Supabase-Ready-green?logo=supabase)](https://supabase.com/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Latest-blue?logo=postgresql)](https://www.postgresql.org/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-An AI-powered attendance tracking system combining real-time face recognition, analytics dashboards, and big data processing with Hadoop.
+An AI-powered attendance tracking system combining real-time face recognition with PostgreSQL backend and JWT authentication.
 
-> 🔗 **Repository**: [github.com/moinn31/ATTENDANCE-TRACKING-SYSTEM](https://github.com/moinn31/ATTENDANCE-TRACKING-SYSTEM)
-
-## 📸 Demo & Screenshots
-
-![System Demo](https://via.placeholder.com/800x400/4A90E2/ffffff?text=Add+Your+Screenshots+Here)
-
-*Add screenshots of your scanner, dashboard, and analytics pages after deployment*
-
-## 📑 Table of Contents
-
-- [Features](#features)
-- [Quick Start](#quick-start)
-- [Installation](#installation)
-- [Project Structure](#project-structure)
-- [API Endpoints](#api-endpoints)
-- [Database Schema](#database-schema)
-- [Face Recognition](#face-recognition)
-- [Hadoop Integration](#hadoop-integration)
-- [Security](#security)
-- [Troubleshooting](#troubleshooting)
-- [Contributing](#contributing)
-- [License](#license)
-
-## ✨ Features
+## 📸 Features
 
 ### Core Features
-- **Real-Time Face Recognition**: Browser-based face detection using face-api.js with confidence scoring
-- **Attendance Marking**: One-click attendance marking with automatic face matching
-- **Student Management**: Add, manage, and track student roster with face enrollment status
-- **Role-Based Access**: Teacher and Admin roles with appropriate permissions
-- **Analytics Dashboard**: Real-time attendance insights, trends, and system metrics
-- **Hadoop Integration**: Big data processing pipeline for historical analysis
+- **✨ Real-Time Face Recognition**: Browser-based face detection using face-api.js with confidence scoring
+- **📱 Mobile Friendly**: Full support for mobile phones with camera access
+- **📊 Attendance Marking**: One-click attendance marking with automatic face matching
+- **👥 Student Management**: Add, manage, and track student roster with face enrollment
+- **🔐 JWT Authentication**: Secure token-based authentication with bcrypt password hashing
+- **📈 Analytics Dashboard**: Real-time attendance insights and visual reporting
+- **🎯 Role-Based Access**: Teacher and Admin roles with appropriate permissions
 
-### Technical Highlights
+### Technical Stack
 - **Frontend**: Next.js 16 with React 19, TypeScript, Tailwind CSS v4
-- **Authentication**: Supabase Auth with email/password
-- **Database**: PostgreSQL with Row-Level Security (RLS)
-- **Face Recognition**: face-api.js (TensorFlow.js based, browser-side processing)
-- **Charts**: Recharts for interactive visualizations
+- **Backend**: Node.js with Express-style API routes
+- **Authentication**: JWT tokens with bcrypt password hashing
+- **Database**: PostgreSQL with secure connection pooling
+- **Face Recognition**: face-api.js (TensorFlow.js based, runs in browser)
+- **Analytics**: Recharts for interactive visualizations
+
+## 🚀 Quick Start (Desktop)
+
+```bash
+# Install dependencies
+npm install
+
+# Setup environment variables
+cp .env.example .env.local
+# Edit .env.local and add:
+# POSTGRES_PASSWORD=your_password
+# JWT_SECRET=your_secret_key
+
+# Start development server
+npm run dev
+
+# Open http://localhost:3000
+```
+
+## 📱 Mobile Phone Setup
+
+To use the app on your mobile phone:
+
+```bash
+npm run dev -- -H 0.0.0.0 -p 3000
+```
+
+Then on mobile, open: `http://YOUR_COMPUTER_IP:3000`
+
+For detailed mobile setup guide, see [MOBILE_SETUP.md](MOBILE_SETUP.md) and [MOBILE_ACCESS_QUICK_START.md](MOBILE_ACCESS_QUICK_START.md)
 - **Big Data**: Apache Hadoop 3.3.6 with MapReduce and YARN
 - **APIs**: RESTful endpoints for all operations
 

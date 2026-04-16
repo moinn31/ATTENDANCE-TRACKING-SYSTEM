@@ -1,9 +1,6 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
-import { isMissingSessionError } from '@/lib/supabase/auth-errors'
 import { Button } from '@/components/ui/button'
 import { DashboardShell } from '@/components/dashboard-shell'
 import { Download, Database, Brain, Cloud } from 'lucide-react'
@@ -37,45 +34,6 @@ interface AnalyticsData {
 export default function AnalyticsPage() {
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null)
   const [loading, setLoading] = useState(true)
-  const [user, setUser] = useState<any>(null)
-  const router = useRouter()
-  const [supabase] = useState(() => createClient())
-
-  // Check authentication
-  useEffect(() => {
-    const getUser = async () => {
-      try {
-        const {
-          data: { user },
-          error,
-        } = await supabase.auth.getUser()
-        
-        if (error && !isMissingSessionError(error.message)) {
-          console.error('Auth error:', error.message)
-          await supabase.auth.signOut()
-          setLoading(false)
-          router.replace('/auth/login')
-          return
-        }
-
-        if (!user) {
-          setLoading(false)
-          router.replace('/auth/login')
-          return
-        }
-
-        setUser(user)
-        setLoading(false)
-      } catch (error) {
-        console.error('Failed to get user:', error)
-        await supabase.auth.signOut()
-        setLoading(false)
-        router.replace('/auth/login')
-      }
-    }
-
-    void getUser()
-  }, [router, supabase])
 
   // Fetch analytics
   useEffect(() => {
@@ -108,7 +66,7 @@ export default function AnalyticsPage() {
       }
       setAnalytics(mockAnalytics)
     }
-  }, [loading])
+  }, [])
 
   const exportAnalytics = () => {
     if (!analytics) return
@@ -201,7 +159,7 @@ export default function AnalyticsPage() {
               <div className="rounded-2xl bg-sky-100 p-3 text-sky-700"><Cloud className="size-5" /></div>
               <div>
                 <p className="text-sm font-semibold text-slate-800">Cloud Computing</p>
-                <p className="text-xs text-muted-foreground">Supabase storage and serverless APIs</p>
+                <p className="text-xs text-muted-foreground">PostgreSQL storage and serverless APIs</p>
               </div>
             </div>
             <p className="mt-4 text-sm text-slate-600">Authentication, storage, and analysis endpoints are structured for cloud deployment and team access.</p>
