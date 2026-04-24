@@ -53,7 +53,7 @@ type RecognitionServiceResponse = {
 
 const DETECTOR_INPUT_SIZE = 512
 const DETECTOR_SCORE_THRESHOLD = 0.05
-const FACE_MATCH_DISTANCE_THRESHOLD = 0.68
+const FACE_MATCH_DISTANCE_THRESHOLD = 0.5
 const REQUIRED_CONFIRMATION_FRAMES = 1
 const VIDEO_TARGET_FPS = 30
 const YOLO_SERVICE_TARGET_FPS = 6
@@ -678,6 +678,23 @@ export default function ScannerPage() {
     }
   }
 
+  const seekVideo = async (video: HTMLVideoElement, time: number) => {
+    const safeTime = Math.max(0, Math.min(time, Math.max(0, video.duration - 0.05)))
+    if (Math.abs(video.currentTime - safeTime) < 0.02) return
+
+    await new Promise<void>((resolve, reject) => {
+      const onSeeked = () => { cleanup(); resolve() }
+      const onError = () => { cleanup(); reject(new Error('Video seek failed')) }
+      const cleanup = () => {
+        video.removeEventListener('seeked', onSeeked)
+        video.removeEventListener('error', onError)
+      }
+      video.addEventListener('seeked', onSeeked, { once: true })
+      video.addEventListener('error', onError, { once: true })
+      video.currentTime = safeTime
+    })
+  }
+
   const createVideoElementFromBlob = async (blob: Blob) => {
     const objectUrl = URL.createObjectURL(blob)
     const video = document.createElement('video')
@@ -699,33 +716,7 @@ export default function ScannerPage() {
     }
   }
 
-  const seekVideo = async (video: HTMLVideoElement, timeSeconds: number) => {
-    const safeTime = Math.max(0, Math.min(timeSeconds, Math.max(0, video.duration - 0.05)))
-    if (Math.abs(video.currentTime - safeTime) < 0.02) {
-      return
-    }
 
-    await new Promise<void>((resolve, reject) => {
-      const onSeeked = () => {
-        cleanup()
-        resolve()
-      }
-
-      const onError = () => {
-        cleanup()
-        reject(new Error('Unable to seek recorded video'))
-      }
-
-      const cleanup = () => {
-        video.removeEventListener('seeked', onSeeked)
-        video.removeEventListener('error', onError)
-      }
-
-      video.addEventListener('seeked', onSeeked, { once: true })
-      video.addEventListener('error', onError, { once: true })
-      video.currentTime = safeTime
-    })
-  }
 
   const analyzeAttendanceVideoWithYoloService = async (
     blob: Blob,
@@ -884,55 +875,171 @@ export default function ScannerPage() {
   const processRecordedVideo = async (blob: Blob, roster: EnrolledStudent[] = enrolledStudents) => {
     setIsProcessingVideo(true)
     setProcessingProgress(0)
-    setScanStatus('Processing recorded video frame by frame with YOLO service...')
+    setScanStatus('Processing recorded video frame by frame...')
 
+    let objectUrl = ''
     try {
-      const duration = await resolveVideoDuration(blob)
-      setVideoDuration(duration)
+      // Create a temporary video element from the blob
+      const loadResult = await createVideoElementFromBlob(blob)
+      const tempVideo = loadResult.video
+      objectUrl = loadResult.objectUrl
 
-      const analyzeLocally = async () => {
-        return await analyzeAttendanceVideo(blob, roster as EnrolledFace[], {
-          targetFps: VIDEO_TARGET_FPS,
-          durationHintSeconds: duration,
-          frameStride: 1,
-          onStatus: (message) => setScanStatus(message),
-          onFramePreview: (frame) => renderProcessedFramePreview(frame),
-          onProgress: (progress, processedFrames, totalFrames) => {
-            setProcessingProgress(progress)
-            const safeTotalFrames = Number.isFinite(totalFrames) && totalFrames > 0
-              ? totalFrames
-              : Math.max(processedFrames, 1)
-            if (processedFrames % 10 === 0 || processedFrames === safeTotalFrames) {
-              setScanStatus(`Tracing video frames... ${progress}% (${processedFrames}/${safeTotalFrames} frames)`)
-            }
-          },
-        })
+      // Resolve video duration (WebM can report Infinity initially)
+      let duration = tempVideo.duration
+      if (!Number.isFinite(duration) || duration <= 0) {
+        // Seek to a far time to force duration resolution
+        try { await seekVideo(tempVideo, 1e9) } catch {}
+        duration = tempVideo.duration
+        if (!Number.isFinite(duration) || duration <= 0) {
+          duration = await resolveVideoDuration(blob)
+        }
+        try { await seekVideo(tempVideo, 0) } catch {}
       }
 
-      let matches: VideoRecognitionMatch[] = []
-      const descriptorSizes = Array.from(new Set(roster.map((student) => student.descriptor.length)))
-      const hasYoloCompatibleEmbeddings = descriptorSizes.length === 1 && descriptorSizes[0] >= 256
+      if (!Number.isFinite(duration) || duration <= 0) {
+        setError('Video duration could not be resolved. Please record for a few more seconds and try again.')
+        return
+      }
 
-      if (!hasYoloCompatibleEmbeddings) {
-        setScanStatus('Using local face recognition for attendance (embedding format not YOLO-compatible).')
-        matches = await analyzeLocally()
-      } else {
-        try {
-          matches = await analyzeAttendanceVideoWithYoloService(blob, roster, duration)
-        } catch (serviceError) {
-          console.warn('[scanner] YOLO service unavailable, falling back to local face-api', serviceError)
-          setScanStatus('YOLO service unavailable. Falling back to local recognition...')
-          matches = await analyzeLocally()
+      setVideoDuration(duration)
+
+      // Build face matcher from enrolled students
+      const faceMatcher = faceMatcherRef.current
+      if (!faceMatcher) {
+        setError('Face matcher is not ready. Please wait for models to load.')
+        return
+      }
+
+      // Frame-by-frame processing (same approach as the working reference project)
+      const FRAME_STEP = 1 / 30 // ~30fps sampling
+      const MIN_VOTES = 1
+      const frameSamples: number[] = []
+      for (let t = 0; t < duration; t += FRAME_STEP) {
+        frameSamples.push(Math.min(t, duration))
+      }
+      const totalFrames = frameSamples.length
+
+      const recognizedById = new Map<string, DetectedStudent>()
+      const localVotes = new Map<string, number>()
+      const localConfidence = new Map<string, number>()
+      let processedFrames = 0
+
+      // Set up the processing canvas
+      const frameCanvas = document.createElement('canvas')
+
+      for (const timestamp of frameSamples) {
+        // Seek to frame
+        await seekVideo(tempVideo, timestamp)
+
+        if (tempVideo.videoWidth <= 0 || tempVideo.videoHeight <= 0) {
+          processedFrames++
+          continue
+        }
+
+        // Draw frame to canvas
+        frameCanvas.width = tempVideo.videoWidth
+        frameCanvas.height = tempVideo.videoHeight
+        const ctx = frameCanvas.getContext('2d')
+        if (!ctx) {
+          processedFrames++
+          continue
+        }
+        ctx.drawImage(tempVideo, 0, 0, frameCanvas.width, frameCanvas.height)
+
+        // Run face detection with relaxed settings (matching reference project)
+        const detections = await faceapi
+          .detectAllFaces(frameCanvas, new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.2 }))
+          .withFaceLandmarks()
+          .withFaceDescriptors()
+
+        // Render the current frame to the visible canvas for preview
+        if (canvasRef.current && tempVideo.videoWidth > 0) {
+          const displayCanvas = canvasRef.current
+          displayCanvas.width = tempVideo.videoWidth
+          displayCanvas.height = tempVideo.videoHeight
+          const displayCtx = displayCanvas.getContext('2d')
+          if (displayCtx) {
+            displayCtx.clearRect(0, 0, displayCanvas.width, displayCanvas.height)
+            displayCtx.drawImage(tempVideo, 0, 0, displayCanvas.width, displayCanvas.height)
+            if (detections.length > 0) {
+              const displaySize = { width: tempVideo.videoWidth, height: tempVideo.videoHeight }
+              faceapi.matchDimensions(displayCanvas, displaySize)
+              const resized = faceapi.resizeResults(detections, displaySize)
+              faceapi.draw.drawDetections(displayCanvas, resized)
+            }
+          }
+        }
+
+        // Match each detected face against enrolled students
+        for (const detection of detections) {
+          const bestMatch = faceMatcher.findBestMatch(detection.descriptor)
+          if (bestMatch.label === 'unknown') continue
+
+          const matched = enrolledByIdRef.current.get(bestMatch.label)
+          if (!matched) continue
+
+          const currentVotes = localVotes.get(matched.id) ?? 0
+          const nextVotes = currentVotes + 1
+          localVotes.set(matched.id, nextVotes)
+          localConfidence.set(
+            matched.id,
+            Math.max(localConfidence.get(matched.id) ?? 0, distanceToConfidence(bestMatch.distance))
+          )
+
+          if (nextVotes >= MIN_VOTES) {
+            recognizedById.set(matched.id, {
+              id: matched.id,
+              name: matched.name,
+              roll_number: matched.roll_number,
+              confidence: distanceToConfidence(bestMatch.distance),
+              timestamp: formatVideoTimestamp(timestamp),
+            })
+          }
+        }
+
+        processedFrames++
+        const progress = Math.min(100, Math.round((processedFrames / totalFrames) * 100))
+        setProcessingProgress(progress)
+
+        // Update UI every 5 frames or at end
+        if (processedFrames === 1 || processedFrames % 5 === 0 || processedFrames === totalFrames) {
+          setDetectedStudents(Array.from(recognizedById.values()).slice(0, 120))
+          const presentSoFar = Array.from(localVotes.entries()).filter(([, v]) => v >= MIN_VOTES)
+          setScanStatus(
+            `Tracing video frames... ${progress}% (${processedFrames}/${totalFrames} frames). Matched ${presentSoFar.length} student(s).`
+          )
         }
       }
 
-      applyRecognitionMatches(matches)
+      // Final results
+      const presentIds = Array.from(localVotes.entries())
+        .filter(([, votes]) => votes >= MIN_VOTES)
+        .map(([studentId]) => studentId)
+
+      previewPresentRef.current = new Set(presentIds)
+      setPreviewPresentIds(presentIds)
+      setDetectedStudents(Array.from(recognizedById.values()).slice(0, 120))
+      setScanCompleted(true)
       setProcessingProgress(100)
+
+      if (presentIds.length === 0) {
+        setScanStatus('Video processed, but no enrolled faces matched. Check browser console for debug info.')
+        console.log('[scanner] No matches found. Debug info:')
+        console.log('[scanner]   Enrolled students:', roster.length)
+        console.log('[scanner]   Descriptor dims:', roster.map(s => s.descriptor.length))
+        console.log('[scanner]   Total frames:', totalFrames)
+        console.log('[scanner]   Duration:', duration, 'seconds')
+      } else {
+        setScanStatus(
+          `Video processing complete. Present: ${presentIds.length}, Absent: ${Math.max(allStudents.length - presentIds.length, 0)}`
+        )
+      }
     } catch (err) {
       console.error('[scanner] recorded video processing error', err)
       setError(err instanceof Error ? err.message : 'Failed to process attendance video')
       setScanStatus('Video processing failed. You can retry the scan.')
     } finally {
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
       setIsProcessingVideo(false)
     }
   }
