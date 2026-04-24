@@ -8,3 +8,12 @@ node_modules/
 .next/
 .env*.local
 .DS_Store
+
+# Python
+.venv*/
+__pycache__/
+scripts/__pycache__/
+scripts/models/
+
+# Data
+data/

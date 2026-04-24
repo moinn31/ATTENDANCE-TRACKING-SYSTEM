@@ -1,7 +1,9 @@
 fastapi==0.115.12
 uvicorn==0.34.0
 ultralytics==8.3.72
-insightface==0.7.3
 opencv-python==4.11.0.86
-numpy==2.2.3
+numpy==2.1.1
 onnxruntime==1.20.1
+
+# Optional runtime dependencies for full YOLO + ArcFace recognition:
+# insightface==0.7.3

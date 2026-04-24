@@ -94,36 +94,53 @@ export default function Home() {
         </section>
 
         <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          <div className="glass-card p-5">
+          <a href="/tech-stack" className="glass-card p-5 transition-all hover:shadow-lg hover:scale-[1.01] cursor-pointer">
             <div className="flex items-center gap-3">
               <div className="rounded-2xl bg-blue-100 p-3 text-blue-700"><Database className="size-5" /></div>
               <div>
-                <p className="text-sm font-semibold text-slate-800">BDA</p>
-                <p className="text-xs text-slate-500">Data analysis and reporting</p>
+                <p className="text-sm font-semibold text-slate-800">BDA (5 V&apos;s)</p>
+                <p className="text-xs text-slate-500">Apache Spark + Hadoop HDFS</p>
               </div>
             </div>
-            <p className="mt-4 text-sm text-slate-600">Use analytics dashboards, trends, and exports to understand attendance patterns at class, subject, and student level.</p>
-          </div>
-          <div className="glass-card p-5">
+            <p className="mt-4 text-sm text-slate-600">Big Data Analytics with Spark DataFrames, MapReduce, HDFS Parquet storage, windowed aggregation, and real-time streaming pipeline.</p>
+            <div className="mt-3 flex flex-wrap gap-1">
+              <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-700">Volume</span>
+              <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">Velocity</span>
+              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">Variety</span>
+              <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold text-violet-700">Veracity</span>
+              <span className="rounded-full bg-pink-100 px-2 py-0.5 text-[10px] font-semibold text-pink-700">Value</span>
+            </div>
+          </a>
+          <a href="/tech-stack" className="glass-card p-5 transition-all hover:shadow-lg hover:scale-[1.01] cursor-pointer">
             <div className="flex items-center gap-3">
               <div className="rounded-2xl bg-emerald-100 p-3 text-emerald-700"><Brain className="size-5" /></div>
               <div>
-                <p className="text-sm font-semibold text-slate-800">AI</p>
-                <p className="text-xs text-slate-500">Face recognition and detection</p>
+                <p className="text-sm font-semibold text-slate-800">AI / ML</p>
+                <p className="text-xs text-slate-500">YOLO + ArcFace + Bayesian</p>
               </div>
             </div>
-            <p className="mt-4 text-sm text-slate-600">Capture face descriptors, improve enrollment, and support intelligent attendance matching with confidence scoring.</p>
-          </div>
-          <div className="glass-card p-5">
+            <p className="mt-4 text-sm text-slate-600">Search algorithms (face matching), learning algorithms (deep learning models), and probabilistic reasoning (Bayesian Present/Absent decisions).</p>
+            <div className="mt-3 flex flex-wrap gap-1">
+              <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">Search</span>
+              <span className="rounded-full bg-teal-100 px-2 py-0.5 text-[10px] font-semibold text-teal-700">Learning</span>
+              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">Probabilistic</span>
+            </div>
+          </a>
+          <a href="/tech-stack" className="glass-card p-5 transition-all hover:shadow-lg hover:scale-[1.01] cursor-pointer">
             <div className="flex items-center gap-3">
               <div className="rounded-2xl bg-sky-100 p-3 text-sky-700"><Cloud className="size-5" /></div>
               <div>
                 <p className="text-sm font-semibold text-slate-800">Cloud Computing</p>
-                <p className="text-xs text-slate-500">PostgreSQL, serverless APIs, deployment ready</p>
+                <p className="text-xs text-slate-500">AWS RDS + Serverless + HDFS</p>
               </div>
             </div>
-            <p className="mt-4 text-sm text-slate-600">Authentication, APIs, and storage already fit a cloud-first workflow for classroom or institution use.</p>
-          </div>
+            <p className="mt-4 text-sm text-slate-600">Camera streams to cloud servers for central AI processing. AWS RDS PostgreSQL, Next.js serverless APIs, HDFS data lake, auto-scaling deployment.</p>
+            <div className="mt-3 flex flex-wrap gap-1">
+              <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-semibold text-sky-700">AWS RDS</span>
+              <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold text-violet-700">Serverless</span>
+              <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-semibold text-indigo-700">HDFS</span>
+            </div>
+          </a>
         </section>
 
         <section className="grid grid-cols-1 gap-5 xl:grid-cols-[2fr_1fr]">

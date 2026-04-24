@@ -39,12 +39,8 @@ jobs:
     - name: 🏗️ Build project
       run: pnpm build
       env:
-        POSTGRES_HOST: student-db.c49geqe6ga6f.us-east-1.rds.amazonaws.com
-        POSTGRES_USER: postgres
-        POSTGRES_PASSWORD: build-password
-        POSTGRES_DB: student_db
-        JWT_SECRET: build-secret
-        NODE_ENV: production
+        NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
 
     - name: ✅ Check build artifacts
       run: |

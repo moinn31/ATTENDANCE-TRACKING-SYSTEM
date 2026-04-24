@@ -60,7 +60,13 @@ export default function StudentsPage() {
         cache: 'no-store',
         headers: getAuthHeaders(),
       })
-      const payload = await response.json()
+
+      let payload: any = {}
+      try {
+        payload = await response.json()
+      } catch {
+        payload = {}
+      }
 
       if (!response.ok) {
         if (response.status === 401) {
@@ -78,7 +84,11 @@ export default function StudentsPage() {
       setError(null)
     } catch (err) {
       console.error('[v0] Error fetching students:', err)
-      setError(err instanceof Error ? err.message : 'Failed to fetch students')
+      if (err instanceof TypeError) {
+        setError('Unable to reach the server. Check your connection and ensure the app is running.')
+      } else {
+        setError(err instanceof Error ? err.message : 'Failed to fetch students')
+      }
     } finally {
       setLoading(false)
     }
@@ -451,9 +461,8 @@ export default function StudentsPage() {
                         size="sm" 
                         variant={student.face_enrolled ? "outline" : "default"}
                         onClick={() => handleStartEnrollment(student.id, student.name)}
-                        disabled={student.face_enrolled}
                       >
-                        {student.face_enrolled ? 'Done' : 'Enroll Face'}
+                        {student.face_enrolled ? 'Re-enroll Face' : 'Enroll Face'}
                       </Button>
                       <Button 
                         size="sm" 

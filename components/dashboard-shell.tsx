@@ -3,7 +3,7 @@
 import { useEffect, useMemo, type ReactNode } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Bell, ChevronDown, LayoutDashboard, UserRound, BarChart3, Settings, Search, Users, Camera } from 'lucide-react'
+import { Bell, ChevronDown, LayoutDashboard, UserRound, BarChart3, Settings, Search, Users, Camera, Layers, Activity } from 'lucide-react'
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
@@ -26,12 +26,21 @@ import {
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 
-const navigationItems = [
+interface NavigationItem {
+  href: string
+  label: string
+  icon: any
+  disabled?: boolean
+}
+
+const navigationItems: NavigationItem[] = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/scanner', label: 'Attendance', icon: UserRound },
   { href: '/students', label: 'Students', icon: Users },
   { href: '/analytics', label: 'Reports', icon: BarChart3 },
+  { href: '/tech-stack', label: 'Tech Stack', icon: Layers },
   { href: '/camera-check', label: 'Camera Check', icon: Camera },
+  { href: '/system-status', label: 'System Status', icon: Activity },
   { href: '/settings', label: 'Settings', icon: Settings },
 ]
 

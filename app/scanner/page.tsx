@@ -1,12 +1,17 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import Link from 'next/link'
 import * as faceapi from 'face-api.js'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { DashboardShell } from '@/components/dashboard-shell'
-import { analyzeAttendanceVideo, type EnrolledFace, type VideoRecognitionMatch } from '@/lib/attendance-video'
+import {
+  analyzeAttendanceVideo,
+  type EnrolledFace,
+  type VideoFramePreview,
+  type VideoRecognitionMatch,
+} from '@/lib/attendance-video'
 
 interface DetectedStudent {
   id: string
@@ -29,11 +34,37 @@ interface StudentRosterEntry {
   roll_number?: string | null
 }
 
+type RecognitionServiceMatch = {
+  student_id: string
+  name: string
+  roll_number?: string | null
+  confidence?: number
+  similarity?: number
+}
+
+type RecognitionServiceResponse = {
+  matches?: RecognitionServiceMatch[]
+  batch_results?: Array<{
+    frame_index: number
+    matches?: RecognitionServiceMatch[]
+  }>
+  error?: string
+}
+
 const DETECTOR_INPUT_SIZE = 512
-const DETECTOR_SCORE_THRESHOLD = 0.12
-const FACE_MATCH_DISTANCE_THRESHOLD = 0.62
-const REQUIRED_CONFIRMATION_FRAMES = 3
-const VIDEO_CAPTURE_DURATION_MS = 6500
+const DETECTOR_SCORE_THRESHOLD = 0.05
+const FACE_MATCH_DISTANCE_THRESHOLD = 0.68
+const REQUIRED_CONFIRMATION_FRAMES = 1
+const VIDEO_TARGET_FPS = 30
+const YOLO_SERVICE_TARGET_FPS = 6
+const YOLO_SERVICE_BATCH_SIZE = 4
+
+const formatVideoTimestamp = (seconds: number) => {
+  const safe = Math.max(0, Math.floor(seconds))
+  const minutes = String(Math.floor(safe / 60)).padStart(2, '0')
+  const secs = String(safe % 60).padStart(2, '0')
+  return `${minutes}:${secs}`
+}
 
 const getPreferredRecorderMimeType = () => {
   if (typeof window === 'undefined' || typeof MediaRecorder === 'undefined') {
@@ -47,8 +78,8 @@ const getPreferredRecorderMimeType = () => {
 export default function ScannerPage() {
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const uploadInputRef = useRef<HTMLInputElement>(null)
   const detectionIntervalRef = useRef<NodeJS.Timeout | null>(null)
-  const recordingTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const recordedChunksRef = useRef<Blob[]>([])
   const previewPresentRef = useRef<Set<string>>(new Set())
@@ -80,7 +111,32 @@ export default function ScannerPage() {
 
   const [scanStatus, setScanStatus] = useState('Ready to scan')
   const [lastScanAt, setLastScanAt] = useState<string | null>(null)
+  const [processingProgress, setProcessingProgress] = useState(0)
+  const [videoDuration, setVideoDuration] = useState(0)
   const [error, setError] = useState<string | null>(null)
+
+  const renderProcessedFramePreview = (frame: VideoFramePreview) => {
+    const previewCanvas = canvasRef.current
+    if (!previewCanvas) {
+      return
+    }
+
+    if (previewCanvas.width !== frame.canvas.width || previewCanvas.height !== frame.canvas.height) {
+      previewCanvas.width = frame.canvas.width
+      previewCanvas.height = frame.canvas.height
+    }
+
+    const context = previewCanvas.getContext('2d')
+    if (!context) {
+      return
+    }
+
+    context.drawImage(frame.canvas, 0, 0, previewCanvas.width, previewCanvas.height)
+
+    if (frame.processedFrames % 15 === 0 || frame.processedFrames === frame.totalFrames) {
+      setLastScanAt(`Frame ${frame.processedFrames}/${frame.totalFrames} @ ${formatVideoTimestamp(frame.timeSeconds)}`)
+    }
+  }
 
   const getAuthHeaders = (isJson = false) => {
     // Safe access to localStorage (might not be available during SSR)
@@ -108,17 +164,41 @@ export default function ScannerPage() {
     setAttendanceDate(getLocalDate())
   }, [])
 
-  const parseDescriptor = (serialized: string | null | undefined): Float32Array | null => {
-    if (!serialized) return null
-    try {
-      const parsed = JSON.parse(serialized)
-      if (!Array.isArray(parsed) || parsed.length === 0) return null
-      const numeric = parsed.map((value) => Number(value)).filter((value) => Number.isFinite(value))
-      if (numeric.length === 0) return null
-      return new Float32Array(numeric)
-    } catch {
-      return null
+  const parseDescriptor = (rawValue: unknown): Float32Array | null => {
+    if (rawValue == null) return null
+
+    const toNumericArray = (value: unknown): number[] => {
+      if (Array.isArray(value)) {
+        return value.map((item) => Number(item)).filter((item) => Number.isFinite(item))
+      }
+
+      if (typeof value === 'string') {
+        try {
+          const parsed = JSON.parse(value)
+          return toNumericArray(parsed)
+        } catch {
+          return []
+        }
+      }
+
+      if (typeof value === 'object' && value !== null) {
+        const entries = Object.entries(value as Record<string, unknown>)
+          .filter(([key]) => /^\d+$/.test(key))
+          .sort((left, right) => Number(left[0]) - Number(right[0]))
+
+        if (entries.length > 0) {
+          return entries
+            .map(([, entryValue]) => Number(entryValue))
+            .filter((entryValue) => Number.isFinite(entryValue))
+        }
+      }
+
+      return []
     }
+
+    const numeric = toNumericArray(rawValue)
+    if (numeric.length === 0) return null
+    return new Float32Array(numeric)
   }
 
   const distanceToConfidence = (distance: number): number => {
@@ -269,22 +349,27 @@ export default function ScannerPage() {
     return '❌ Failed to access camera. Make sure your browser has permission to use the camera and try again.'
   }
 
-  const fetchStudents = async () => {
+  const fetchStudents = async (): Promise<EnrolledStudent[]> => {
     try {
       // Check if token exists before attempting to fetch
       const token = typeof window !== 'undefined' ? window.localStorage.getItem('token') : null
       
       if (!token) {
         setError('🔐 Not authenticated. Please login first.')
-        return
+        return []
       }
 
       const response = await fetch('/api/students?includeEmbeddings=true', {
         cache: 'no-store',
         headers: getAuthHeaders(),
       })
-      
-      const payload = await response.json()
+
+      let payload: any = {}
+      try {
+        payload = await response.json()
+      } catch {
+        payload = {}
+      }
 
       if (!response.ok) {
         if (response.status === 401) {
@@ -292,7 +377,7 @@ export default function ScannerPage() {
           if (typeof window !== 'undefined') {
             window.localStorage.removeItem('token')
           }
-          return
+          return []
         }
         throw new Error(payload.error || 'Failed to fetch students')
       }
@@ -314,10 +399,20 @@ export default function ScannerPage() {
         .filter((row: EnrolledStudent | null): row is EnrolledStudent => Boolean(row))
 
       setEnrolledStudents(enrolled)
+      return enrolled
     } catch (err) {
       console.error('[scanner] students fetch error', err)
-      setError(err instanceof Error ? err.message : 'Failed to fetch students')
+      if (err instanceof TypeError) {
+        setError('Unable to reach the server. Check your connection and ensure the app is still running.')
+      } else {
+        setError(err instanceof Error ? err.message : 'Failed to fetch students')
+      }
+      return []
     }
+  }
+
+  const refreshStudents = async () => {
+    return await fetchStudents()
   }
 
   const processDetections = async () => {
@@ -406,6 +501,7 @@ export default function ScannerPage() {
 
       for (const detection of detections) {
         const bestMatch = faceMatcher.findBestMatch(detection.descriptor)
+        console.log(`[scanner] Face match: label=${bestMatch.label}, distance=${bestMatch.distance.toFixed(3)}, threshold=${FACE_MATCH_DISTANCE_THRESHOLD}`)
         if (bestMatch.label === 'unknown') {
           continue
         }
@@ -417,6 +513,7 @@ export default function ScannerPage() {
 
         const currentVotes = candidateVotesRef.current.get(matched.id) ?? 0
         candidateVotesRef.current.set(matched.id, currentVotes + 1)
+        console.log(`[scanner] Match: ${matched.name} | votes: ${currentVotes + 1}/${REQUIRED_CONFIRMATION_FRAMES} | distance: ${bestMatch.distance.toFixed(3)}`)
 
         // Extra confirmation frames prevent false matches when using long-range tuning.
         if ((candidateVotesRef.current.get(matched.id) ?? 0) < REQUIRED_CONFIRMATION_FRAMES) {
@@ -433,7 +530,7 @@ export default function ScannerPage() {
       }
 
       if (recognized.length === 0) {
-        setScanStatus(`Detected ${detections.length} face(s), searching for enrolled match...`)
+        setScanStatus(`Detected ${detections.length} face(s), searching for enrolled match... (check browser console for details)`)
         return
       }
 
@@ -482,6 +579,8 @@ export default function ScannerPage() {
     previewPresentRef.current = new Set()
     setPreviewPresentIds([])
     setDetectedStudents([])
+    setProcessingProgress(0)
+    setVideoDuration(0)
     setAttendanceSaved(false)
     setScanCompleted(false)
     setScanStatus('Preview cleared. Start scan again.')
@@ -520,6 +619,8 @@ export default function ScannerPage() {
       previewPresentRef.current = new Set()
       setPreviewPresentIds([])
       setDetectedStudents([])
+      setProcessingProgress(0)
+      setVideoDuration(0)
       setScanStatus('All saved attendance data has been cleared from database.')
     } catch (err) {
       console.error('[scanner] clear saved attendance error', err)
@@ -540,7 +641,7 @@ export default function ScannerPage() {
         name: match.name,
         roll_number: match.roll_number,
         confidence: match.confidence,
-        timestamp: new Date().toLocaleTimeString(),
+        timestamp: formatVideoTimestamp(match.bestFrameIndex / VIDEO_TARGET_FPS),
       }
     })
 
@@ -558,16 +659,275 @@ export default function ScannerPage() {
     setScanStatus(`Video processed frame by frame. Matched ${dedupedMatches.length} student(s) from ${frameCount} unique face track(s).`)
   }
 
-  const processRecordedVideo = async (blob: Blob) => {
-    setIsProcessingVideo(true)
-    setScanStatus('Processing recorded video frame by frame...')
+  const resolveVideoDuration = async (blob: Blob) => {
+    const url = URL.createObjectURL(blob)
+    const video = document.createElement('video')
+    video.preload = 'metadata'
+    video.src = url
 
     try {
-      const matches = await analyzeAttendanceVideo(blob, enrolledStudents as EnrolledFace[], {
-        onStatus: (message) => setScanStatus(message),
+      await new Promise<void>((resolve, reject) => {
+        video.onloadedmetadata = () => resolve()
+        video.onerror = () => reject(new Error('Could not read video metadata'))
+      })
+      return Number.isFinite(video.duration) ? Math.max(0, video.duration) : 0
+    } finally {
+      URL.revokeObjectURL(url)
+      video.removeAttribute('src')
+      video.load()
+    }
+  }
+
+  const createVideoElementFromBlob = async (blob: Blob) => {
+    const objectUrl = URL.createObjectURL(blob)
+    const video = document.createElement('video')
+    video.src = objectUrl
+    video.muted = true
+    video.playsInline = true
+    video.preload = 'auto'
+
+    try {
+      await new Promise<void>((resolve, reject) => {
+        video.onloadedmetadata = () => resolve()
+        video.onerror = () => reject(new Error('Unable to load recorded video'))
       })
 
+      return { video, objectUrl }
+    } catch (error) {
+      URL.revokeObjectURL(objectUrl)
+      throw error
+    }
+  }
+
+  const seekVideo = async (video: HTMLVideoElement, timeSeconds: number) => {
+    const safeTime = Math.max(0, Math.min(timeSeconds, Math.max(0, video.duration - 0.05)))
+    if (Math.abs(video.currentTime - safeTime) < 0.02) {
+      return
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      const onSeeked = () => {
+        cleanup()
+        resolve()
+      }
+
+      const onError = () => {
+        cleanup()
+        reject(new Error('Unable to seek recorded video'))
+      }
+
+      const cleanup = () => {
+        video.removeEventListener('seeked', onSeeked)
+        video.removeEventListener('error', onError)
+      }
+
+      video.addEventListener('seeked', onSeeked, { once: true })
+      video.addEventListener('error', onError, { once: true })
+      video.currentTime = safeTime
+    })
+  }
+
+  const analyzeAttendanceVideoWithYoloService = async (
+    blob: Blob,
+    roster: EnrolledStudent[],
+    durationHintSeconds: number,
+  ): Promise<VideoRecognitionMatch[]> => {
+    const { video, objectUrl } = await createVideoElementFromBlob(blob)
+    const frameCanvas = document.createElement('canvas')
+
+    try {
+      const duration = Math.max(
+        Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 0,
+        Number.isFinite(durationHintSeconds) && durationHintSeconds > 0 ? durationHintSeconds : 0,
+      )
+      const intervalSeconds = Math.max(1 / YOLO_SERVICE_TARGET_FPS, 0.05)
+      const totalFrames = Math.max(1, Math.ceil(duration / intervalSeconds))
+      const aggregate = new Map<string, VideoRecognitionMatch>()
+
+      const students = roster.map((student) => ({
+        id: student.id,
+        name: student.name,
+        roll_number: student.roll_number,
+        embedding: Array.from(student.descriptor),
+      }))
+
+      let processedFrames = 0
+      let batchPayload: Array<{ frameIndex: number; imageBase64: string }> = []
+
+      const flushBatch = async () => {
+        if (batchPayload.length === 0) {
+          return
+        }
+
+        const response = await fetch('/api/recognition', {
+          method: 'POST',
+          headers: getAuthHeaders(true),
+          body: JSON.stringify({
+            images_base64: batchPayload.map((frame) => frame.imageBase64),
+            frame_indices: batchPayload.map((frame) => frame.frameIndex),
+            students,
+          }),
+        })
+
+        let payload: RecognitionServiceResponse = {}
+        try {
+          payload = await response.json()
+        } catch {
+          payload = {}
+        }
+
+        if (!response.ok) {
+          if (response.status === 501 || response.status === 503) {
+            throw new Error('Recognition service not configured')
+          }
+          if (response.status === 401) {
+            if (typeof window !== 'undefined') {
+              window.localStorage.removeItem('token')
+            }
+            throw new Error('Authentication failed. Please login again.')
+          }
+          throw new Error(payload.error || 'YOLO recognition request failed')
+        }
+
+        const groupedMatches = payload.batch_results
+          ? payload.batch_results.map((entry) => ({
+              frameIndex: Number.isFinite(entry.frame_index) ? entry.frame_index : 0,
+              matches: entry.matches || [],
+            }))
+          : [
+              {
+                frameIndex: batchPayload[0]?.frameIndex ?? 0,
+                matches: payload.matches || [],
+              },
+            ]
+
+        for (const group of groupedMatches) {
+          for (const match of group.matches) {
+            const existing = aggregate.get(match.student_id)
+            const confidence = Math.max(0, Math.min(100, Math.round(match.confidence ?? (match.similarity ?? 0) * 100)))
+
+            if (!existing) {
+              aggregate.set(match.student_id, {
+                studentId: match.student_id,
+                name: match.name,
+                roll_number: match.roll_number ?? null,
+                confidence,
+                frameCount: 1,
+                bestFrameIndex: group.frameIndex,
+              })
+              continue
+            }
+
+            aggregate.set(match.student_id, {
+              ...existing,
+              confidence: Math.max(existing.confidence, confidence),
+              frameCount: existing.frameCount + 1,
+              bestFrameIndex: Math.min(existing.bestFrameIndex, group.frameIndex),
+            })
+          }
+        }
+
+        processedFrames = Math.min(totalFrames, processedFrames + batchPayload.length)
+        const progress = Math.min(100, Math.round((processedFrames / totalFrames) * 100))
+        setProcessingProgress(progress)
+        setScanStatus(
+          `Tracing video frames with YOLO... ${progress}% (${processedFrames}/${totalFrames} frames) | Matches: ${aggregate.size}`,
+        )
+
+        batchPayload = []
+      }
+
+      for (let frameIndex = 0; frameIndex < totalFrames; frameIndex += 1) {
+        const sampleTime = Math.min(duration, frameIndex * intervalSeconds)
+        await seekVideo(video, sampleTime)
+
+        if (video.videoWidth <= 0 || video.videoHeight <= 0) {
+          continue
+        }
+
+        frameCanvas.width = video.videoWidth
+        frameCanvas.height = video.videoHeight
+        const context = frameCanvas.getContext('2d')
+        if (!context) {
+          continue
+        }
+
+        context.drawImage(video, 0, 0, frameCanvas.width, frameCanvas.height)
+
+        renderProcessedFramePreview({
+          canvas: frameCanvas,
+          frameIndex,
+          processedFrames: frameIndex + 1,
+          totalFrames,
+          timeSeconds: sampleTime,
+        })
+
+        batchPayload.push({
+          frameIndex,
+          imageBase64: frameCanvas.toDataURL('image/jpeg', 0.88),
+        })
+
+        const isBatchReady = batchPayload.length >= YOLO_SERVICE_BATCH_SIZE || frameIndex + 1 === totalFrames
+        if (isBatchReady) {
+          await flushBatch()
+        }
+      }
+
+      return Array.from(aggregate.values()).sort((left, right) => right.confidence - left.confidence)
+    } finally {
+      URL.revokeObjectURL(objectUrl)
+      video.removeAttribute('src')
+      video.load()
+    }
+  }
+
+  const processRecordedVideo = async (blob: Blob, roster: EnrolledStudent[] = enrolledStudents) => {
+    setIsProcessingVideo(true)
+    setProcessingProgress(0)
+    setScanStatus('Processing recorded video frame by frame with YOLO service...')
+
+    try {
+      const duration = await resolveVideoDuration(blob)
+      setVideoDuration(duration)
+
+      const analyzeLocally = async () => {
+        return await analyzeAttendanceVideo(blob, roster as EnrolledFace[], {
+          targetFps: VIDEO_TARGET_FPS,
+          durationHintSeconds: duration,
+          frameStride: 1,
+          onStatus: (message) => setScanStatus(message),
+          onFramePreview: (frame) => renderProcessedFramePreview(frame),
+          onProgress: (progress, processedFrames, totalFrames) => {
+            setProcessingProgress(progress)
+            const safeTotalFrames = Number.isFinite(totalFrames) && totalFrames > 0
+              ? totalFrames
+              : Math.max(processedFrames, 1)
+            if (processedFrames % 10 === 0 || processedFrames === safeTotalFrames) {
+              setScanStatus(`Tracing video frames... ${progress}% (${processedFrames}/${safeTotalFrames} frames)`)
+            }
+          },
+        })
+      }
+
+      let matches: VideoRecognitionMatch[] = []
+      const descriptorSizes = Array.from(new Set(roster.map((student) => student.descriptor.length)))
+      const hasYoloCompatibleEmbeddings = descriptorSizes.length === 1 && descriptorSizes[0] >= 256
+
+      if (!hasYoloCompatibleEmbeddings) {
+        setScanStatus('Using local face recognition for attendance (embedding format not YOLO-compatible).')
+        matches = await analyzeLocally()
+      } else {
+        try {
+          matches = await analyzeAttendanceVideoWithYoloService(blob, roster, duration)
+        } catch (serviceError) {
+          console.warn('[scanner] YOLO service unavailable, falling back to local face-api', serviceError)
+          setScanStatus('YOLO service unavailable. Falling back to local recognition...')
+          matches = await analyzeLocally()
+        }
+      }
+
       applyRecognitionMatches(matches)
+      setProcessingProgress(100)
     } catch (err) {
       console.error('[scanner] recorded video processing error', err)
       setError(err instanceof Error ? err.message : 'Failed to process attendance video')
@@ -578,11 +938,6 @@ export default function ScannerPage() {
   }
 
   const stopRecordedSession = () => {
-    if (recordingTimeoutRef.current) {
-      clearTimeout(recordingTimeoutRef.current)
-      recordingTimeoutRef.current = null
-    }
-
     const recorder = mediaRecorderRef.current
     if (recorder && recorder.state === 'recording') {
       setScanStatus('Stopping video recording and preparing frame analysis...')
@@ -597,6 +952,30 @@ export default function ScannerPage() {
       setScanCompleted(true)
       setScanStatus('Video scan stopped. Review the attendance preview below, then save if it looks correct.')
     }
+  }
+
+  const handleVideoUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    if (!file.type.startsWith('video/')) {
+      setError('Please upload a valid video file.')
+      return
+    }
+
+    setError(null)
+    sessionActiveRef.current = false
+    setSessionActive(false)
+    stopCamera()
+    setAttendanceSaved(false)
+    setScanCompleted(false)
+    setDetectedStudents([])
+    setPreviewPresentIds([])
+    previewPresentRef.current = new Set()
+    candidateVotesRef.current = new Map()
+
+    await processRecordedVideo(file)
+    event.target.value = ''
   }
 
   const saveAttendance = async () => {
@@ -654,7 +1033,13 @@ export default function ScannerPage() {
       return
     }
 
-    if (enrolledStudents.length === 0) {
+    const refreshedStudents = await refreshStudents()
+    const availableStudents = refreshedStudents.length > 0 ? refreshedStudents : enrolledStudents
+
+    console.log(`[scanner] Session starting: ${availableStudents.length} enrolled students loaded, ${allStudents.length} total students`)
+    availableStudents.forEach(s => console.log(`[scanner]   - ${s.name} (${s.id.substring(0,8)}...) descriptor: ${s.descriptor.length}-dim`))
+
+    if (availableStudents.length === 0) {
       setError('No enrolled students found. Enroll faces first.')
       return
     }
@@ -669,6 +1054,7 @@ export default function ScannerPage() {
 
     setError(null)
     setIsProcessingVideo(false)
+    setProcessingProgress(0)
     sessionActiveRef.current = true
     setSessionActive(true)
     setAttendanceSaved(false)
@@ -704,11 +1090,6 @@ export default function ScannerPage() {
       recordedChunksRef.current = []
       mediaRecorderRef.current = null
 
-      if (recordingTimeoutRef.current) {
-        clearTimeout(recordingTimeoutRef.current)
-        recordingTimeoutRef.current = null
-      }
-
       sessionActiveRef.current = false
       setSessionActive(false)
       stopCamera()
@@ -723,18 +1104,12 @@ export default function ScannerPage() {
         return
       }
 
-      void processRecordedVideo(blob)
+      void processRecordedVideo(blob, availableStudents)
     }
 
     try {
       recorder.start(1000)
-      recordingTimeoutRef.current = setTimeout(() => {
-        if (recorder.state === 'recording') {
-          recorder.stop()
-        }
-      }, VIDEO_CAPTURE_DURATION_MS)
-
-      setScanStatus('Recording a short attendance video. The app will extract frames and match faces automatically.')
+      setScanStatus('Recording started. Keep recording as long as needed, then click Stop Scan to process at 30fps.')
     } catch (err) {
       console.error('[scanner] MediaRecorder start failed', err)
       mediaRecorderRef.current = null
@@ -782,6 +1157,26 @@ export default function ScannerPage() {
   }, [])
 
   useEffect(() => {
+    const handleFocus = () => {
+      void refreshStudents()
+    }
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        void refreshStudents()
+      }
+    }
+
+    window.addEventListener('focus', handleFocus)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      window.removeEventListener('focus', handleFocus)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [])
+
+  useEffect(() => {
     if (enrolledStudents.length === 0) {
       faceMatcherRef.current = null
       enrolledByIdRef.current = new Map()
@@ -797,9 +1192,6 @@ export default function ScannerPage() {
 
   useEffect(() => {
     return () => {
-      if (recordingTimeoutRef.current) {
-        clearTimeout(recordingTimeoutRef.current)
-      }
       if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
         mediaRecorderRef.current.stop()
       }
@@ -815,6 +1207,7 @@ export default function ScannerPage() {
   const secondMetricCount = isResultFinalized || sessionActive ? unmatchedCount : 0
   const absentCount = isResultFinalized ? unmatchedCount : 0
   const previewPresentSet = useMemo(() => new Set(previewPresentIds), [previewPresentIds])
+  const showVideoSurface = cameraActive || isProcessingVideo
 
   if (loading) {
     return (
@@ -859,6 +1252,23 @@ export default function ScannerPage() {
           </div>
         </div>
 
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            onClick={() => uploadInputRef.current?.click()}
+            disabled={sessionActive || isSaving || isProcessingVideo}
+          >
+            Upload Video
+          </Button>
+          <input
+            ref={uploadInputRef}
+            type="file"
+            accept="video/*"
+            className="hidden"
+            onChange={handleVideoUpload}
+          />
+        </div>
+
         <div>
           <Button variant="destructive" onClick={clearSavedAttendance} disabled={sessionActive || isSaving || isProcessingVideo}>
             Clear All Saved Attendance Data
@@ -889,6 +1299,11 @@ export default function ScannerPage() {
         <div className="glass-card p-3">
           <p className="text-xs text-muted-foreground">Status</p>
           <p className="text-sm font-medium text-foreground">{scanStatus}</p>
+          {isProcessingVideo && (
+            <p className="text-xs text-muted-foreground mt-1">
+              Trace Progress: {processingProgress}%{videoDuration > 0 ? ` | Video: ${formatVideoTimestamp(videoDuration)}` : ''}
+            </p>
+          )}
         </div>
 
         {isProcessingVideo && (
@@ -922,9 +1337,9 @@ export default function ScannerPage() {
                 />
                 <canvas
                   ref={canvasRef}
-                  className={`absolute inset-0 w-full h-full ${cameraActive ? 'opacity-100' : 'opacity-0'}`}
+                  className={`absolute inset-0 w-full h-full ${showVideoSurface ? 'opacity-100' : 'opacity-0'}`}
                 />
-                {!cameraActive && (
+                {!showVideoSurface && (
                   <div className="absolute inset-0 flex items-center justify-center">
                     <p className="text-muted-foreground">Camera is off. Click Start Video Scan.</p>
                   </div>
@@ -943,7 +1358,7 @@ export default function ScannerPage() {
                   <div key={student.id} className="p-3 bg-green-50 border border-green-300 rounded">
                     <p className="font-medium text-green-900">{student.name}</p>
                     <p className="text-xs text-muted-foreground">{student.roll_number || '-'}</p>
-                    <p className="text-xs text-muted-foreground">{student.timestamp}</p>
+                    <p className="text-xs text-muted-foreground">Frame time: {student.timestamp}</p>
                     <p className="text-xs font-semibold text-green-700 mt-1">PRESENT PREVIEW ({student.confidence}%)</p>
                   </div>
                 ))

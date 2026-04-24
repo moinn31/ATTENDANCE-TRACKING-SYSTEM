@@ -18,6 +18,14 @@ export type VideoRecognitionMatch = {
   bestFrameIndex: number
 }
 
+export type VideoFramePreview = {
+  canvas: HTMLCanvasElement
+  frameIndex: number
+  processedFrames: number
+  totalFrames: number
+  timeSeconds: number
+}
+
 type FrameCandidate = {
   descriptor: Float32Array
   confidence: number
@@ -27,20 +35,26 @@ type FrameCandidate = {
 }
 
 type VideoRecognitionOptions = {
-  sampleIntervalMs?: number
+  targetFps?: number
+  durationHintSeconds?: number
+  frameStride?: number
   minDetectionScore?: number
   minBoxRatio?: number
   duplicateSimilarityThreshold?: number
   minBlurScore?: number
   onStatus?: (message: string) => void
+  onProgress?: (progress: number, processedFrames: number, totalFrames: number) => void
+  onFramePreview?: (frame: VideoFramePreview) => void
 }
 
-const DEFAULT_OPTIONS: Required<Omit<VideoRecognitionOptions, 'onStatus'>> = {
-  sampleIntervalMs: 350,
-  minDetectionScore: 0.72,
-  minBoxRatio: 0.08,
-  duplicateSimilarityThreshold: 0.92,
-  minBlurScore: 8,
+const DEFAULT_OPTIONS: Required<Omit<VideoRecognitionOptions, 'onStatus' | 'onProgress' | 'onFramePreview'>> = {
+  targetFps: 30,
+  durationHintSeconds: 0,
+  frameStride: 1,
+  minDetectionScore: 0.10,
+  minBoxRatio: 0.005,
+  duplicateSimilarityThreshold: 0.95,
+  minBlurScore: 0.5,
 }
 
 const cosineSimilarity = (left: Float32Array, right: Float32Array) => {
@@ -64,7 +78,7 @@ const cosineSimilarity = (left: Float32Array, right: Float32Array) => {
   return dot / (Math.sqrt(leftNorm) * Math.sqrt(rightNorm))
 }
 
-const waitForEvent = (target: HTMLVideoElement, eventName: 'loadedmetadata' | 'seeked') => {
+const waitForEvent = (target: HTMLVideoElement, eventName: 'loadedmetadata' | 'seeked' | 'ended') => {
   return new Promise<void>((resolve, reject) => {
     const handleResolve = () => {
       cleanup()
@@ -93,6 +107,7 @@ const createVideoElementFromBlob = async (blob: Blob) => {
   video.muted = true
   video.playsInline = true
   video.preload = 'auto'
+  video.crossOrigin = 'anonymous'
 
   await waitForEvent(video, 'loadedmetadata')
   video.pause()
@@ -177,6 +192,208 @@ const calculateCandidateScore = (candidate: FrameCandidate) => {
   return candidate.confidence * 0.55 + candidate.boxRatio * 100 * 0.25 + normalizedBlur * 100 * 0.2
 }
 
+const toPositiveFinite = (value: unknown) => {
+  const numericValue = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(numericValue) && numericValue > 0 ? numericValue : 0
+}
+
+const processFrameCanvas = async (
+  canvas: HTMLCanvasElement,
+  frameIndex: number,
+  enrolledStudents: EnrolledFace[],
+  faceMatcher: faceapi.FaceMatcher,
+  mergedOptions: Required<Omit<VideoRecognitionOptions, 'onStatus' | 'onProgress'>>,
+  uniqueCandidates: FrameCandidate[],
+) => {
+  const detections = await faceapi
+    .detectAllFaces(
+      canvas,
+      new faceapi.TinyFaceDetectorOptions({
+        inputSize: 512,
+        scoreThreshold: mergedOptions.minDetectionScore,
+      }),
+    )
+    .withFaceLandmarks()
+    .withFaceDescriptors()
+
+  if (detections.length === 0) {
+    return
+  }
+
+  for (const detection of detections) {
+    const detectionScore = detection.detection.score
+    const box = detection.detection.box
+    const boxRatio = (box.width * box.height) / (canvas.width * canvas.height)
+
+    if (detectionScore < mergedOptions.minDetectionScore) {
+      continue
+    }
+
+    if (boxRatio < mergedOptions.minBoxRatio) {
+      continue
+    }
+
+    const blurScore = estimateBlurScore(canvas, box)
+    if (blurScore < mergedOptions.minBlurScore) {
+      continue
+    }
+
+    const candidate: FrameCandidate = {
+      descriptor: detection.descriptor,
+      confidence: detectionScore,
+      boxRatio,
+      blurScore,
+      frameIndex,
+    }
+
+    const existingIndex = uniqueCandidates.findIndex(
+      (current) => cosineSimilarity(current.descriptor, candidate.descriptor) >= mergedOptions.duplicateSimilarityThreshold,
+    )
+
+    if (existingIndex === -1) {
+      uniqueCandidates.push(candidate)
+      continue
+    }
+
+    const currentCandidate = uniqueCandidates[existingIndex]
+    if (calculateCandidateScore(candidate) > calculateCandidateScore(currentCandidate)) {
+      uniqueCandidates[existingIndex] = candidate
+    }
+  }
+}
+
+const analyzeWithFrameCallbacks = async (
+  video: HTMLVideoElement,
+  canvas: HTMLCanvasElement,
+  enrolledStudents: EnrolledFace[],
+  faceMatcher: faceapi.FaceMatcher,
+  mergedOptions: Required<Omit<VideoRecognitionOptions, 'onStatus' | 'onProgress' | 'onFramePreview'>>,
+  uniqueCandidates: FrameCandidate[],
+  onProgress?: (progress: number, processedFrames: number, totalFrames: number) => void,
+  onFramePreview?: (frame: VideoFramePreview) => void,
+) => {
+  const frameCallback = (video as HTMLVideoElement & {
+    requestVideoFrameCallback?: (callback: VideoFrameRequestCallback) => number
+  }).requestVideoFrameCallback
+
+  if (typeof frameCallback !== 'function') {
+    return false
+  }
+
+  await video.play()
+  let callbackFrameIndex = 0
+  let processedFrames = 0
+  const knownDuration = toPositiveFinite(video.duration)
+  const hintedDuration = toPositiveFinite(mergedOptions.durationHintSeconds)
+  const estimatedDuration = Math.max(knownDuration, hintedDuration)
+  const frameStride = Math.max(1, mergedOptions.frameStride)
+  const estimatedRawFrames = Math.max(1, Math.ceil(estimatedDuration * mergedOptions.targetFps))
+  const estimatedTotalFrames = Math.max(1, Math.ceil(estimatedRawFrames / frameStride))
+  const knownEndTime = knownDuration > 0 ? Math.max(0, knownDuration - 0.01) : Number.POSITIVE_INFINITY
+
+  await new Promise<void>((resolve, reject) => {
+    const scheduleNext = () => {
+      frameCallback.call(video, async (_now, metadata) => {
+        try {
+          if (video.ended || metadata.mediaTime >= knownEndTime) {
+            resolve()
+            return
+          }
+
+          if (video.videoWidth > 0 && video.videoHeight > 0 && callbackFrameIndex % frameStride === 0) {
+            canvas.width = video.videoWidth
+            canvas.height = video.videoHeight
+            const context = canvas.getContext('2d')
+            if (context) {
+              context.drawImage(video, 0, 0, canvas.width, canvas.height)
+              await processFrameCanvas(
+                canvas,
+                callbackFrameIndex,
+                enrolledStudents,
+                faceMatcher,
+                mergedOptions,
+                uniqueCandidates,
+              )
+              processedFrames += 1
+              const dynamicTotalFrames = Math.max(estimatedTotalFrames, processedFrames)
+              const progress = Math.min(100, Math.round((processedFrames / dynamicTotalFrames) * 100))
+              onProgress?.(progress, processedFrames, dynamicTotalFrames)
+              onFramePreview?.({
+                canvas,
+                frameIndex: callbackFrameIndex,
+                processedFrames,
+                totalFrames: dynamicTotalFrames,
+                timeSeconds: metadata.mediaTime,
+              })
+            }
+          }
+
+          callbackFrameIndex += 1
+
+          scheduleNext()
+        } catch (error) {
+          reject(error)
+        }
+      })
+    }
+
+    scheduleNext()
+  })
+
+  return true
+}
+
+const analyzeWithSeekFallback = async (
+  video: HTMLVideoElement,
+  canvas: HTMLCanvasElement,
+  enrolledStudents: EnrolledFace[],
+  faceMatcher: faceapi.FaceMatcher,
+  mergedOptions: Required<Omit<VideoRecognitionOptions, 'onStatus' | 'onProgress' | 'onFramePreview'>>,
+  uniqueCandidates: FrameCandidate[],
+  onProgress?: (progress: number, processedFrames: number, totalFrames: number) => void,
+  onFramePreview?: (frame: VideoFramePreview) => void,
+) => {
+  const targetFrameIntervalMs = Math.max(1000 / mergedOptions.targetFps, 1)
+  const duration = Math.max(toPositiveFinite(video.duration), toPositiveFinite(mergedOptions.durationHintSeconds))
+  const frameStride = Math.max(1, mergedOptions.frameStride)
+  const rawFrameCount = duration > 0 ? Math.max(1, Math.ceil((duration * 1000) / targetFrameIntervalMs)) : 1
+  const totalFrames = Math.max(1, Math.ceil(rawFrameCount / frameStride))
+
+  let processedFrames = 0
+  for (let frameIndex = 0; frameIndex < rawFrameCount; frameIndex += 1) {
+    if (frameIndex % frameStride !== 0) {
+      continue
+    }
+
+    const sampleTime = Math.min(duration, (frameIndex * targetFrameIntervalMs) / 1000)
+    await seekVideo(video, sampleTime)
+
+    if (video.videoWidth === 0 || video.videoHeight === 0) {
+      continue
+    }
+
+    canvas.width = video.videoWidth
+    canvas.height = video.videoHeight
+    const context = canvas.getContext('2d')
+    if (!context) {
+      continue
+    }
+
+    context.drawImage(video, 0, 0, canvas.width, canvas.height)
+    await processFrameCanvas(canvas, frameIndex, enrolledStudents, faceMatcher, mergedOptions, uniqueCandidates)
+    processedFrames += 1
+    const progress = Math.min(100, Math.round((processedFrames / totalFrames) * 100))
+    onProgress?.(progress, processedFrames, totalFrames)
+    onFramePreview?.({
+      canvas,
+      frameIndex,
+      processedFrames,
+      totalFrames,
+      timeSeconds: sampleTime,
+    })
+  }
+}
+
 export async function analyzeAttendanceVideo(
   blob: Blob,
   enrolledStudents: EnrolledFace[],
@@ -194,86 +411,35 @@ export async function analyzeAttendanceVideo(
     const labeledDescriptors = enrolledStudents.map(
       (student) => new faceapi.LabeledFaceDescriptors(student.id, [student.descriptor]),
     )
-    const faceMatcher = new faceapi.FaceMatcher(labeledDescriptors, 0.62)
+    const faceMatcher = new faceapi.FaceMatcher(labeledDescriptors, 0.65)
 
     const uniqueCandidates: FrameCandidate[] = []
-    const duration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 0
-    const totalFrames = duration > 0 ? Math.max(1, Math.ceil((duration * 1000) / mergedOptions.sampleIntervalMs)) : 0
 
-    options.onStatus?.('Analyzing recorded video frame by frame...')
+    options.onStatus?.('Analyzing recorded video frame by frame at native frame rate...')
 
-    for (let frameIndex = 0; frameIndex < totalFrames; frameIndex += 1) {
-      const sampleTime = Math.min(duration, (frameIndex * mergedOptions.sampleIntervalMs) / 1000)
-      await seekVideo(video, sampleTime)
+    const usedFrameCallbacks = await analyzeWithFrameCallbacks(
+      video,
+      hiddenCanvas,
+      enrolledStudents,
+      faceMatcher,
+      mergedOptions,
+      uniqueCandidates,
+      options.onProgress,
+      options.onFramePreview,
+    )
 
-      if (video.videoWidth === 0 || video.videoHeight === 0) {
-        continue
-      }
-
-      hiddenCanvas.width = video.videoWidth
-      hiddenCanvas.height = video.videoHeight
-      const context = hiddenCanvas.getContext('2d')
-      if (!context) {
-        continue
-      }
-
-      context.drawImage(video, 0, 0, hiddenCanvas.width, hiddenCanvas.height)
-
-      const detections = await faceapi
-        .detectAllFaces(
-          hiddenCanvas,
-          new faceapi.TinyFaceDetectorOptions({
-            inputSize: 512,
-            scoreThreshold: mergedOptions.minDetectionScore,
-          }),
-        )
-        .withFaceLandmarks()
-        .withFaceDescriptors()
-
-      if (detections.length === 0) {
-        continue
-      }
-
-      for (const detection of detections) {
-        const detectionScore = detection.detection.score
-        const box = detection.detection.box
-        const boxRatio = (box.width * box.height) / (hiddenCanvas.width * hiddenCanvas.height)
-
-        if (detectionScore < mergedOptions.minDetectionScore) {
-          continue
-        }
-
-        if (boxRatio < mergedOptions.minBoxRatio) {
-          continue
-        }
-
-        const blurScore = estimateBlurScore(hiddenCanvas, box)
-        if (blurScore < mergedOptions.minBlurScore) {
-          continue
-        }
-
-        const candidate: FrameCandidate = {
-          descriptor: detection.descriptor,
-          confidence: detectionScore,
-          boxRatio,
-          blurScore,
-          frameIndex,
-        }
-
-        const existingIndex = uniqueCandidates.findIndex(
-          (current) => cosineSimilarity(current.descriptor, candidate.descriptor) >= mergedOptions.duplicateSimilarityThreshold,
-        )
-
-        if (existingIndex === -1) {
-          uniqueCandidates.push(candidate)
-          continue
-        }
-
-        const currentCandidate = uniqueCandidates[existingIndex]
-        if (calculateCandidateScore(candidate) > calculateCandidateScore(currentCandidate)) {
-          uniqueCandidates[existingIndex] = candidate
-        }
-      }
+    if (!usedFrameCallbacks) {
+      options.onStatus?.(`Video callback unavailable, falling back to ${mergedOptions.targetFps}fps frame extraction...`)
+      await analyzeWithSeekFallback(
+        video,
+        hiddenCanvas,
+        enrolledStudents,
+        faceMatcher,
+        mergedOptions,
+        uniqueCandidates,
+        options.onProgress,
+        options.onFramePreview,
+      )
     }
 
     const recognized = new Map<string, VideoRecognitionMatch>()

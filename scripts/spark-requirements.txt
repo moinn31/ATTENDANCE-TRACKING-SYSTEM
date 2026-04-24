@@ -1,0 +1,25 @@
+# Smart Attendance System - Big Data Analytics Requirements
+# ========================================================
+# These are the Python dependencies for the BDA / Spark analytics pipeline.
+# 
+# Install with:
+#   pip install -r scripts/spark-requirements.txt
+#
+# For full Spark cluster mode, also install Hadoop and configure HDFS.
+
+# Apache Spark (Big Data Processing Engine)
+pyspark>=3.5.0
+
+# Data processing
+pandas>=2.0.0
+numpy>=1.24.0
+
+# CSV and JSON handling (built-in, listed for documentation)
+# csv (stdlib)
+# json (stdlib)
+
+# Optional: PostgreSQL connector for Spark
+# psycopg2-binary>=2.9.0
+
+# Optional: AWS S3 integration
+# boto3>=1.28.0
