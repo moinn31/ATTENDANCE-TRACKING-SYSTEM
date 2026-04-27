@@ -152,9 +152,18 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json({ data: newStudent }, { status: 201 })
-  } catch (error) {
+  } catch (error: any) {
     if (error instanceof Error && error.message === 'Unauthorized') {
       return NextResponse.json({ error: error.message }, { status: 401 })
+    }
+
+    // Handle duplicate roll number
+    if (error?.code === '23505') {
+      const duplicateValue = error?.detail?.match(/=\(([^)]+)\)/)?.[1] || 'this number'
+      return NextResponse.json(
+        { error: `A student with roll number "${duplicateValue}" already exists. Please use a different roll number or delete the existing record first.` },
+        { status: 409 }
+      )
     }
 
     console.error('[v0] Error creating student:', error)

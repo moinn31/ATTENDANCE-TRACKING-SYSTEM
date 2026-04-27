@@ -455,6 +455,30 @@ For issues:
 
 ---
 
+## Docker Integration Tips
+
+If you are running Hadoop inside Docker and Spark on your host machine, follow these steps:
+
+### 1. Port Mapping
+Ensure your `docker-compose.yml` exposes these ports:
+- **NameNode**: `9000` (RPC), `9870` (UI)
+- **DataNode**: `9864`, `50010`, `50020`, `50075`
+
+### 2. Hostname Resolution
+DataNodes report their internal Docker hostnames to the NameNode. To fix connection errors:
+1. Set `dfs.client.use.datanode.hostname` to `true` in your Hadoop config.
+2. Add the container hostnames (e.g., `namenode`, `datanode`) to your local `hosts` file:
+   - Windows: `C:\Windows\System32\drivers\etc\hosts`
+   - Entry: `127.0.0.1 namenode datanode`
+
+### 3. Spark Config
+Update your Spark session with:
+```python
+.config("spark.hadoop.dfs.client.use.datanode.hostname", "true")
+```
+
+---
+
 **Version**: 1.0  
-**Last Updated**: 2024-02-23  
+**Last Updated**: 2026-04-25  
 **Maintainer**: Smart Attendance System Team

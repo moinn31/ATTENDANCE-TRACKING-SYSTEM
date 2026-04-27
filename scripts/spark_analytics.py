@@ -94,6 +94,9 @@ def create_spark_session(
         .config("spark.executor.memory", "2g")
         .config("spark.sql.adaptive.enabled", "true")
         .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
+        # Docker Networking Optimization: Use hostnames for DataNodes
+        .config("spark.hadoop.dfs.client.use.datanode.hostname", "true")
+        .config("spark.hadoop.dfs.datanode.use.datanode.hostname", "true")
     )
 
     if hdfs_host:

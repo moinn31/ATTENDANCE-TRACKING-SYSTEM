@@ -1,6 +1,7 @@
 import pool from '@/lib/db.js'
 import { verifyToken } from '@/lib/auth.js'
 import { NextRequest, NextResponse } from 'next/server'
+import { saveToHadoop } from '@/lib/hadoop.js'
 
 type AttendanceRow = {
   id: string
@@ -149,6 +150,9 @@ export async function POST(request: NextRequest) {
         `,
         [existing.id, status, normalizedClassName, normalizedSubjectName, confidence ?? 0, createdByUid],
       )
+      
+      // Save to Hadoop in background
+      saveToHadoop({ student_id, status, confidence, date: attendanceDate, class_name: normalizedClassName, subject_name: normalizedSubjectName }).catch(console.error);
 
       return NextResponse.json({
         data: {
@@ -180,6 +184,9 @@ export async function POST(request: NextRequest) {
       `,
       [student_id, attendanceDate, status, normalizedClassName, normalizedSubjectName, confidence ?? 0, createdByUid],
     )
+
+    // Save to Hadoop in background
+    saveToHadoop({ student_id, status, confidence, date: attendanceDate, class_name: normalizedClassName, subject_name: normalizedSubjectName }).catch(console.error);
 
     return NextResponse.json(
       {

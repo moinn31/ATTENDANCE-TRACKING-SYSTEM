@@ -65,19 +65,34 @@ export async function GET() {
     };
   }
 
-  // 4. Check Hadoop (via CLI)
+  // 4. Check Hadoop (via CLI or Docker)
   try {
-    const { stdout, stderr } = await execPromise("hadoop version");
+    // Try local command first
+    const { stdout } = await execPromise("hadoop version");
     status.hadoop = {
       status: "installed",
       message: "Hadoop is available on the system path.",
-      versionInfo: stdout || stderr,
+      versionInfo: stdout,
     };
   } catch (err) {
-    status.hadoop = { 
-      status: "not_found", 
-      message: "Hadoop is not installed or not in the system PATH." 
-    };
+    // If local command fails, check if Docker container is running or WebUI is reachable
+    try {
+      const response = await fetch("http://localhost:9870", { signal: AbortSignal.timeout(2000) });
+      if (response.ok) {
+        status.hadoop = {
+          status: "connected",
+          message: "Connected to Hadoop NameNode (Docker).",
+          uiUrl: "http://localhost:9870",
+        };
+      } else {
+        throw new Error("UI unreachable");
+      }
+    } catch (dockerErr) {
+      status.hadoop = { 
+        status: "not_found", 
+        message: "Hadoop is not installed locally or its Docker container is offline." 
+      };
+    }
   }
 
   return Response.json(status);
