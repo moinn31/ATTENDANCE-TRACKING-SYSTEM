@@ -43,13 +43,21 @@ export default function Home() {
   const fetchDashboard = useCallback(async () => {
     try {
       const token = window.localStorage.getItem('token')
-      if (!token) { router.replace('/auth/login'); return }
+      if (!token) {
+        window.localStorage.removeItem('token')
+        router.replace('/auth/login')
+        return
+      }
 
       const res = await fetch('/api/dashboard', {
         headers: { 'Authorization': `Bearer ${token}` }
       })
 
-      if (res.status === 401) { router.replace('/auth/login'); return }
+      if (res.status === 401) {
+        window.localStorage.removeItem('token')
+        router.replace('/auth/login')
+        return
+      }
 
       if (res.ok) {
         const result = await res.json()

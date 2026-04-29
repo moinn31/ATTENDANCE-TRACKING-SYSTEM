@@ -183,6 +183,7 @@ export function DashboardShell({ title, subtitle, children, headerActions }: Das
   useEffect(() => {
     const token = window.localStorage.getItem('token')
     if (!token) {
+      window.localStorage.removeItem('token') // Ensure it's totally gone
       router.replace('/auth/login')
     }
   }, [router])

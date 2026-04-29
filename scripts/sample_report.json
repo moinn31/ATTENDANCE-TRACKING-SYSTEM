@@ -1,0 +1,863 @@
+{
+  "generated_at": "2026-04-29T11:00:00.854150",
+  "engine": "spark",
+  "total_records": 1500,
+  "daily_summary": [
+    {
+      "date": "2026-03-30",
+      "total_records": 50,
+      "present_count": 41,
+      "absent_count": 3,
+      "late_count": 6,
+      "attendance_rate": 82.0,
+      "avg_confidence": 88.3
+    },
+    {
+      "date": "2026-03-31",
+      "total_records": 50,
+      "present_count": 45,
+      "absent_count": 3,
+      "late_count": 2,
+      "attendance_rate": 90.0,
+      "avg_confidence": 88.29
+    },
+    {
+      "date": "2026-04-01",
+      "total_records": 50,
+      "present_count": 39,
+      "absent_count": 4,
+      "late_count": 7,
+      "attendance_rate": 78.0,
+      "avg_confidence": 88.69
+    },
+    {
+      "date": "2026-04-02",
+      "total_records": 50,
+      "present_count": 42,
+      "absent_count": 3,
+      "late_count": 5,
+      "attendance_rate": 84.0,
+      "avg_confidence": 88.11
+    },
+    {
+      "date": "2026-04-03",
+      "total_records": 50,
+      "present_count": 41,
+      "absent_count": 6,
+      "late_count": 3,
+      "attendance_rate": 82.0,
+      "avg_confidence": 84.43
+    },
+    {
+      "date": "2026-04-04",
+      "total_records": 50,
+      "present_count": 40,
+      "absent_count": 7,
+      "late_count": 3,
+      "attendance_rate": 80.0,
+      "avg_confidence": 86.0
+    },
+    {
+      "date": "2026-04-05",
+      "total_records": 50,
+      "present_count": 40,
+      "absent_count": 1,
+      "late_count": 9,
+      "attendance_rate": 80.0,
+      "avg_confidence": 89.47
+    },
+    {
+      "date": "2026-04-06",
+      "total_records": 50,
+      "present_count": 42,
+      "absent_count": 5,
+      "late_count": 3,
+      "attendance_rate": 84.0,
+      "avg_confidence": 86.38
+    },
+    {
+      "date": "2026-04-07",
+      "total_records": 50,
+      "present_count": 41,
+      "absent_count": 2,
+      "late_count": 7,
+      "attendance_rate": 82.0,
+      "avg_confidence": 90.88
+    },
+    {
+      "date": "2026-04-08",
+      "total_records": 50,
+      "present_count": 40,
+      "absent_count": 2,
+      "late_count": 8,
+      "attendance_rate": 80.0,
+      "avg_confidence": 90.15
+    },
+    {
+      "date": "2026-04-09",
+      "total_records": 50,
+      "present_count": 43,
+      "absent_count": 2,
+      "late_count": 5,
+      "attendance_rate": 86.0,
+      "avg_confidence": 89.93
+    },
+    {
+      "date": "2026-04-10",
+      "total_records": 50,
+      "present_count": 41,
+      "absent_count": 3,
+      "late_count": 6,
+      "attendance_rate": 82.0,
+      "avg_confidence": 88.23
+    },
+    {
+      "date": "2026-04-11",
+      "total_records": 50,
+      "present_count": 43,
+      "absent_count": 2,
+      "late_count": 5,
+      "attendance_rate": 86.0,
+      "avg_confidence": 87.82
+    },
+    {
+      "date": "2026-04-12",
+      "total_records": 50,
+      "present_count": 39,
+      "absent_count": 6,
+      "late_count": 5,
+      "attendance_rate": 78.0,
+      "avg_confidence": 84.33
+    },
+    {
+      "date": "2026-04-13",
+      "total_records": 50,
+      "present_count": 41,
+      "absent_count": 7,
+      "late_count": 2,
+      "attendance_rate": 82.0,
+      "avg_confidence": 84.69
+    },
+    {
+      "date": "2026-04-14",
+      "total_records": 50,
+      "present_count": 42,
+      "absent_count": 3,
+      "late_count": 5,
+      "attendance_rate": 84.0,
+      "avg_confidence": 86.3
+    },
+    {
+      "date": "2026-04-15",
+      "total_records": 50,
+      "present_count": 43,
+      "absent_count": 5,
+      "late_count": 2,
+      "attendance_rate": 86.0,
+      "avg_confidence": 83.76
+    },
+    {
+      "date": "2026-04-16",
+      "total_records": 50,
+      "present_count": 35,
+      "absent_count": 8,
+      "late_count": 7,
+      "attendance_rate": 70.0,
+      "avg_confidence": 80.27
+    },
+    {
+      "date": "2026-04-17",
+      "total_records": 50,
+      "present_count": 40,
+      "absent_count": 6,
+      "late_count": 4,
+      "attendance_rate": 80.0,
+      "avg_confidence": 83.9
+    },
+    {
+      "date": "2026-04-18",
+      "total_records": 50,
+      "present_count": 42,
+      "absent_count": 4,
+      "late_count": 4,
+      "attendance_rate": 84.0,
+      "avg_confidence": 85.78
+    },
+    {
+      "date": "2026-04-19",
+      "total_records": 50,
+      "present_count": 40,
+      "absent_count": 2,
+      "late_count": 8,
+      "attendance_rate": 80.0,
+      "avg_confidence": 89.14
+    },
+    {
+      "date": "2026-04-20",
+      "total_records": 50,
+      "present_count": 44,
+      "absent_count": 3,
+      "late_count": 3,
+      "attendance_rate": 88.0,
+      "avg_confidence": 87.87
+    },
+    {
+      "date": "2026-04-21",
+      "total_records": 50,
+      "present_count": 41,
+      "absent_count": 6,
+      "late_count": 3,
+      "attendance_rate": 82.0,
+      "avg_confidence": 86.02
+    },
+    {
+      "date": "2026-04-22",
+      "total_records": 50,
+      "present_count": 42,
+      "absent_count": 4,
+      "late_count": 4,
+      "attendance_rate": 84.0,
+      "avg_confidence": 85.53
+    },
+    {
+      "date": "2026-04-23",
+      "total_records": 50,
+      "present_count": 41,
+      "absent_count": 2,
+      "late_count": 7,
+      "attendance_rate": 82.0,
+      "avg_confidence": 89.88
+    },
+    {
+      "date": "2026-04-24",
+      "total_records": 50,
+      "present_count": 44,
+      "absent_count": 2,
+      "late_count": 4,
+      "attendance_rate": 88.0,
+      "avg_confidence": 89.95
+    },
+    {
+      "date": "2026-04-25",
+      "total_records": 50,
+      "present_count": 38,
+      "absent_count": 4,
+      "late_count": 8,
+      "attendance_rate": 76.0,
+      "avg_confidence": 83.14
+    },
+    {
+      "date": "2026-04-26",
+      "total_records": 50,
+      "present_count": 43,
+      "absent_count": 4,
+      "late_count": 3,
+      "attendance_rate": 86.0,
+      "avg_confidence": 87.47
+    },
+    {
+      "date": "2026-04-27",
+      "total_records": 50,
+      "present_count": 41,
+      "absent_count": 4,
+      "late_count": 5,
+      "attendance_rate": 82.0,
+      "avg_confidence": 87.87
+    },
+    {
+      "date": "2026-04-28",
+      "total_records": 50,
+      "present_count": 36,
+      "absent_count": 3,
+      "late_count": 11,
+      "attendance_rate": 72.0,
+      "avg_confidence": 87.43
+    }
+  ],
+  "student_risk_scores": [
+    {
+      "student_id": "student-006",
+      "student_name": "Student 6",
+      "roll_number": "2024-CS-006",
+      "total_classes": 30,
+      "absent": 6,
+      "late": 3,
+      "present": 21,
+      "risk_score": 0.3461,
+      "risk_level": "MEDIUM"
+    },
+    {
+      "student_id": "student-040",
+      "student_name": "Student 40",
+      "roll_number": "2024-CS-040",
+      "total_classes": 30,
+      "absent": 6,
+      "late": 4,
+      "present": 20,
+      "risk_score": 0.3411,
+      "risk_level": "MEDIUM"
+    },
+    {
+      "student_id": "student-008",
+      "student_name": "Student 8",
+      "roll_number": "2024-CS-008",
+      "total_classes": 30,
+      "absent": 5,
+      "late": 2,
+      "present": 23,
+      "risk_score": 0.3064,
+      "risk_level": "MEDIUM"
+    },
+    {
+      "student_id": "student-016",
+      "student_name": "Student 16",
+      "roll_number": "2024-CS-016",
+      "total_classes": 30,
+      "absent": 4,
+      "late": 4,
+      "present": 22,
+      "risk_score": 0.2884,
+      "risk_level": "LOW"
+    },
+    {
+      "student_id": "student-048",
+      "student_name": "Student 48",
+      "roll_number": "2024-CS-048",
+      "total_classes": 30,
+      "absent": 4,
+      "late": 4,
+      "present": 22,
+      "risk_score": 0.2682,
+      "risk_level": "LOW"
+    },
+    {
+      "student_id": "student-010",
+      "student_name": "Student 10",
+      "roll_number": "2024-CS-010",
+      "total_classes": 30,
+      "absent": 3,
+      "late": 5,
+      "present": 22,
+      "risk_score": 0.2676,
+      "risk_level": "LOW"
+    },
+    {
+      "student_id": "student-031",
+      "student_name": "Student 31",
+      "roll_number": "2024-CS-031",
+      "total_classes": 30,
+      "absent": 4,
+      "late": 2,
+      "present": 24,
+      "risk_score": 0.2665,
+      "risk_level": "LOW"
+    },
+    {
+      "student_id": "student-001",
+      "student_name": "Student 1",
+      "roll_number": "2024-CS-001",
+      "total_classes": 30,
+      "absent": 3,
+      "late": 5,
+      "present": 22,
+      "risk_score": 0.2579,
+      "risk_level": "LOW"
+    },
+    {
+      "student_id": "student-044",
+      "student_name": "Student 44",
+      "roll_number": "2024-CS-044",
+      "total_classes": 30,
+      "absent": 4,
+      "late": 2,
+      "present": 24,
+      "risk_score": 0.2499,
+      "risk_level": "LOW"
+    },
+    {
+      "student_id": "student-023",
+      "student_name": "Student 23",
+      "roll_number": "2024-CS-023",
+      "total_classes": 30,
+      "absent": 3,
+      "late": 2,
+      "present": 25,
+      "risk_score": 0.2467,
+      "risk_level": "LOW"
+    },
+    {
+      "student_id": "student-013",
+      "student_name": "Student 13",
+      "roll_number": "2024-CS-013",
+      "total_classes": 30,
+      "absent": 3,
+      "late": 5,
+      "present": 22,
+      "risk_score": 0.2442,
+      "risk_level": "LOW"
+    },
+    {
+      "student_id": "student-034",
+      "student_name": "Student 34",
+      "roll_number": "2024-CS-034",
+      "total_classes": 30,
+      "absent": 3,
+      "late": 5,
+      "present": 22,
+      "risk_score": 0.2434,
+      "risk_level": "LOW"
+    },
+    {
+      "student_id": "student-036",
+      "student_name": "Student 36",
+      "roll_number": "2024-CS-036",
+      "total_classes": 30,
+      "absent": 4,
+      "late": 2,
+      "present": 24,
+      "risk_score": 0.2418,
+      "risk_level": "LOW"
+    },
+    {
+      "student_id": "student-015",
+      "student_name": "Student 15",
+      "roll_number": "2024-CS-015",
+      "total_classes": 30,
+      "absent": 4,
+      "late": 3,
+      "present": 23,
+      "risk_score": 0.2398,
+      "risk_level": "LOW"
+    },
+    {
+      "student_id": "student-005",
+      "student_name": "Student 5",
+      "roll_number": "2024-CS-005",
+      "total_classes": 30,
+      "absent": 3,
+      "late": 3,
+      "present": 24,
+      "risk_score": 0.2397,
+      "risk_level": "LOW"
+    },
+    {
+      "student_id": "student-020",
+      "student_name": "Student 20",
+      "roll_number": "2024-CS-020",
+      "total_classes": 30,
+      "absent": 3,
+      "late": 3,
+      "present": 24,
+      "risk_score": 0.2304,
+      "risk_level": "LOW"
+    },
+    {
+      "student_id": "student-037",
+      "student_name": "Student 37",
+      "roll_number": "2024-CS-037",
+      "total_classes": 30,
+      "absent": 3,
+      "late": 3,
+      "present": 24,
+      "risk_score": 0.2269,
+      "risk_level": "LOW"
+    },
+    {
+      "student_id": "student-032",
+      "student_name": "Student 32",
+      "roll_number": "2024-CS-032",
+      "total_classes": 30,
+      "absent": 3,
+      "late": 5,
+      "present": 22,
+      "risk_score": 0.2246,
+      "risk_level": "LOW"
+    },
+    {
+      "student_id": "student-046",
+      "student_name": "Student 46",
+      "roll_number": "2024-CS-046",
+      "total_classes": 30,
+      "absent": 2,
+      "late": 5,
+      "present": 23,
+      "risk_score": 0.2243,
+      "risk_level": "LOW"
+    },
+    {
+      "student_id": "student-003",
+      "student_name": "Student 3",
+      "roll_number": "2024-CS-003",
+      "total_classes": 30,
+      "absent": 3,
+      "late": 1,
+      "present": 26,
+      "risk_score": 0.2212,
+      "risk_level": "LOW"
+    },
+    {
+      "student_id": "student-030",
+      "student_name": "Student 30",
+      "roll_number": "2024-CS-030",
+      "total_classes": 30,
+      "absent": 2,
+      "late": 4,
+      "present": 24,
+      "risk_score": 0.2174,
+      "risk_level": "LOW"
+    },
+    {
+      "student_id": "student-027",
+      "student_name": "Student 27",
+      "roll_number": "2024-CS-027",
+      "total_classes": 30,
+      "absent": 2,
+      "late": 3,
+      "present": 25,
+      "risk_score": 0.2132,
+      "risk_level": "LOW"
+    },
+    {
+      "student_id": "student-019",
+      "student_name": "Student 19",
+      "roll_number": "2024-CS-019",
+      "total_classes": 30,
+      "absent": 2,
+      "late": 4,
+      "present": 24,
+      "risk_score": 0.2111,
+      "risk_level": "LOW"
+    },
+    {
+      "student_id": "student-014",
+      "student_name": "Student 14",
+      "roll_number": "2024-CS-014",
+      "total_classes": 30,
+      "absent": 2,
+      "late": 2,
+      "present": 26,
+      "risk_score": 0.2078,
+      "risk_level": "LOW"
+    },
+    {
+      "student_id": "student-012",
+      "student_name": "Student 12",
+      "roll_number": "2024-CS-012",
+      "total_classes": 30,
+      "absent": 2,
+      "late": 3,
+      "present": 25,
+      "risk_score": 0.2052,
+      "risk_level": "LOW"
+    },
+    {
+      "student_id": "student-029",
+      "student_name": "Student 29",
+      "roll_number": "2024-CS-029",
+      "total_classes": 30,
+      "absent": 2,
+      "late": 3,
+      "present": 25,
+      "risk_score": 0.1948,
+      "risk_level": "LOW"
+    },
+    {
+      "student_id": "student-049",
+      "student_name": "Student 49",
+      "roll_number": "2024-CS-049",
+      "total_classes": 30,
+      "absent": 3,
+      "late": 2,
+      "present": 25,
+      "risk_score": 0.1948,
+      "risk_level": "LOW"
+    },
+    {
+      "student_id": "student-039",
+      "student_name": "Student 39",
+      "roll_number": "2024-CS-039",
+      "total_classes": 30,
+      "absent": 3,
+      "late": 0,
+      "present": 27,
+      "risk_score": 0.1929,
+      "risk_level": "LOW"
+    },
+    {
+      "student_id": "student-024",
+      "student_name": "Student 24",
+      "roll_number": "2024-CS-024",
+      "total_classes": 30,
+      "absent": 2,
+      "late": 5,
+      "present": 23,
+      "risk_score": 0.1917,
+      "risk_level": "LOW"
+    },
+    {
+      "student_id": "student-041",
+      "student_name": "Student 41",
+      "roll_number": "2024-CS-041",
+      "total_classes": 30,
+      "absent": 2,
+      "late": 3,
+      "present": 25,
+      "risk_score": 0.1914,
+      "risk_level": "LOW"
+    },
+    {
+      "student_id": "student-035",
+      "student_name": "Student 35",
+      "roll_number": "2024-CS-035",
+      "total_classes": 30,
+      "absent": 2,
+      "late": 1,
+      "present": 27,
+      "risk_score": 0.1887,
+      "risk_level": "LOW"
+    },
+    {
+      "student_id": "student-011",
+      "student_name": "Student 11",
+      "roll_number": "2024-CS-011",
+      "total_classes": 30,
+      "absent": 2,
+      "late": 2,
+      "present": 26,
+      "risk_score": 0.1757,
+      "risk_level": "LOW"
+    },
+    {
+      "student_id": "student-021",
+      "student_name": "Student 21",
+      "roll_number": "2024-CS-021",
+      "total_classes": 30,
+      "absent": 1,
+      "late": 6,
+      "present": 23,
+      "risk_score": 0.1678,
+      "risk_level": "LOW"
+    },
+    {
+      "student_id": "student-026",
+      "student_name": "Student 26",
+      "roll_number": "2024-CS-026",
+      "total_classes": 30,
+      "absent": 1,
+      "late": 6,
+      "present": 23,
+      "risk_score": 0.1663,
+      "risk_level": "LOW"
+    },
+    {
+      "student_id": "student-050",
+      "student_name": "Student 50",
+      "roll_number": "2024-CS-050",
+      "total_classes": 30,
+      "absent": 2,
+      "late": 3,
+      "present": 25,
+      "risk_score": 0.1658,
+      "risk_level": "LOW"
+    },
+    {
+      "student_id": "student-022",
+      "student_name": "Student 22",
+      "roll_number": "2024-CS-022",
+      "total_classes": 30,
+      "absent": 1,
+      "late": 4,
+      "present": 25,
+      "risk_score": 0.1601,
+      "risk_level": "LOW"
+    },
+    {
+      "student_id": "student-009",
+      "student_name": "Student 9",
+      "roll_number": "2024-CS-009",
+      "total_classes": 30,
+      "absent": 1,
+      "late": 4,
+      "present": 25,
+      "risk_score": 0.1593,
+      "risk_level": "LOW"
+    },
+    {
+      "student_id": "student-017",
+      "student_name": "Student 17",
+      "roll_number": "2024-CS-017",
+      "total_classes": 30,
+      "absent": 1,
+      "late": 5,
+      "present": 24,
+      "risk_score": 0.1486,
+      "risk_level": "LOW"
+    },
+    {
+      "student_id": "student-042",
+      "student_name": "Student 42",
+      "roll_number": "2024-CS-042",
+      "total_classes": 30,
+      "absent": 1,
+      "late": 2,
+      "present": 27,
+      "risk_score": 0.1411,
+      "risk_level": "LOW"
+    },
+    {
+      "student_id": "student-047",
+      "student_name": "Student 47",
+      "roll_number": "2024-CS-047",
+      "total_classes": 30,
+      "absent": 1,
+      "late": 2,
+      "present": 27,
+      "risk_score": 0.1397,
+      "risk_level": "LOW"
+    },
+    {
+      "student_id": "student-007",
+      "student_name": "Student 7",
+      "roll_number": "2024-CS-007",
+      "total_classes": 30,
+      "absent": 1,
+      "late": 2,
+      "present": 27,
+      "risk_score": 0.1298,
+      "risk_level": "LOW"
+    },
+    {
+      "student_id": "student-038",
+      "student_name": "Student 38",
+      "roll_number": "2024-CS-038",
+      "total_classes": 30,
+      "absent": 2,
+      "late": 2,
+      "present": 26,
+      "risk_score": 0.1237,
+      "risk_level": "LOW"
+    },
+    {
+      "student_id": "student-043",
+      "student_name": "Student 43",
+      "roll_number": "2024-CS-043",
+      "total_classes": 30,
+      "absent": 1,
+      "late": 2,
+      "present": 27,
+      "risk_score": 0.1215,
+      "risk_level": "LOW"
+    },
+    {
+      "student_id": "student-002",
+      "student_name": "Student 2",
+      "roll_number": "2024-CS-002",
+      "total_classes": 30,
+      "absent": 2,
+      "late": 2,
+      "present": 26,
+      "risk_score": 0.1164,
+      "risk_level": "LOW"
+    },
+    {
+      "student_id": "student-045",
+      "student_name": "Student 45",
+      "roll_number": "2024-CS-045",
+      "total_classes": 30,
+      "absent": 1,
+      "late": 3,
+      "present": 26,
+      "risk_score": 0.0987,
+      "risk_level": "LOW"
+    },
+    {
+      "student_id": "student-004",
+      "student_name": "Student 4",
+      "roll_number": "2024-CS-004",
+      "total_classes": 30,
+      "absent": 0,
+      "late": 3,
+      "present": 27,
+      "risk_score": 0.0771,
+      "risk_level": "LOW"
+    },
+    {
+      "student_id": "student-018",
+      "student_name": "Student 18",
+      "roll_number": "2024-CS-018",
+      "total_classes": 30,
+      "absent": 1,
+      "late": 1,
+      "present": 28,
+      "risk_score": 0.0759,
+      "risk_level": "LOW"
+    },
+    {
+      "student_id": "student-033",
+      "student_name": "Student 33",
+      "roll_number": "2024-CS-033",
+      "total_classes": 30,
+      "absent": 0,
+      "late": 2,
+      "present": 28,
+      "risk_score": 0.0718,
+      "risk_level": "LOW"
+    },
+    {
+      "student_id": "student-028",
+      "student_name": "Student 28",
+      "roll_number": "2024-CS-028",
+      "total_classes": 30,
+      "absent": 0,
+      "late": 3,
+      "present": 27,
+      "risk_score": 0.0655,
+      "risk_level": "LOW"
+    },
+    {
+      "student_id": "student-025",
+      "student_name": "Student 25",
+      "roll_number": "2024-CS-025",
+      "total_classes": 30,
+      "absent": 0,
+      "late": 2,
+      "present": 28,
+      "risk_score": 0.0615,
+      "risk_level": "LOW"
+    }
+  ],
+  "confidence_distribution": [
+    {
+      "bucket": "95-100% (Excellent)",
+      "count": 415,
+      "avg_confidence": 98.04
+    },
+    {
+      "bucket": "90-95% (Good)",
+      "count": 429,
+      "avg_confidence": 92.42
+    },
+    {
+      "bucket": "80-90% (Fair)",
+      "count": 486,
+      "avg_confidence": 86.24
+    },
+    {
+      "bucket": "70-80% (Borderline)",
+      "count": 52,
+      "avg_confidence": 77.08
+    },
+    {
+      "bucket": "Below 70% (Unreliable)",
+      "count": 111,
+      "avg_confidence": 32.69
+    }
+  ],
+  "bayesian_sample": {
+    "decision": "present",
+    "posterior_present": 0.9973,
+    "posterior_absent": 0.0027,
+    "confidence_score": 99.73,
+    "reasoning": "High confidence (99.73%). 7 frame(s) confirm detection."
+  }
+}

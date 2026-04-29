@@ -100,7 +100,7 @@ YOLO_CONF_THRESHOLD = float(os.getenv('YOLO_CONF_THRESHOLD', '0.25'))  # Lower f
 YOLO_IMG_SIZE = int(os.getenv('YOLO_IMG_SIZE', '1280'))  # Higher res for 80+ faces
 USE_GPU = _to_bool(os.getenv('USE_CUDA', 'false'))
 MAX_FACES = int(os.getenv('MAX_FACES', '150'))  # Support up to 150 faces per frame
-DET_SIZE = int(os.getenv('DET_SIZE', '640'))  # InsightFace detection input size
+DET_SIZE = int(os.getenv('DET_SIZE', '1280'))  # Increased for small/far faces
 
 # ---------------------------------------------------------------------------
 # FastAPI App
@@ -222,7 +222,7 @@ def _init_insightface() -> Optional[Any]:
         except TypeError:
             # Fall back to v0.2.x API (no providers kwarg)
             _face_analyzer = FaceAnalysis(name=ARCFACE_MODEL)
-            _face_analyzer.prepare(ctx_id=0 if USE_GPU else -1, det_thresh=0.3, det_size=(DET_SIZE, DET_SIZE))
+            _face_analyzer.prepare(ctx_id=0 if USE_GPU else -1, det_thresh=0.2, det_size=(DET_SIZE, DET_SIZE))
             logger.info('InsightFace initialized with v0.2.x API')
 
         return _face_analyzer
@@ -300,7 +300,17 @@ def _recognize_insightface_only(
         return 0, []
 
     # Detect all faces in the frame (max_num=0 means no limit)
-    faces = analyzer.get(frame, max_num=MAX_FACES)
+    # For small faces, we ensure the image is large enough
+    h, w = frame.shape[:2]
+    if max(h, w) < DET_SIZE:
+        scale = DET_SIZE / max(h, w)
+        frame_resized = cv2.resize(frame, (0, 0), fx=scale, fy=scale)
+        faces = analyzer.get(frame_resized, max_num=MAX_FACES)
+        # Rescale bboxes back
+        for face in faces:
+            face.bbox /= scale
+    else:
+        faces = analyzer.get(frame, max_num=MAX_FACES)
     face_count = len(faces)
 
     if face_count == 0:
