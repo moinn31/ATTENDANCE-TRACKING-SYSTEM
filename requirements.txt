@@ -1,0 +1,17 @@
+# Core AI & Inference
+fastapi
+uvicorn[standard]
+pydantic
+ultralytics
+insightface
+opencv-python
+numpy
+onnxruntime-gpu  # Use onnxruntime for CPU-only environments
+
+# Big Data & Analytics
+pyspark
+
+# Database & Utilities
+psycopg2-binary
+python-dotenv
+requests
