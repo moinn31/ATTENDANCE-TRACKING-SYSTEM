@@ -4,6 +4,14 @@ import { useEffect, useRef, useState } from 'react'
 import * as faceapi from 'face-api.js'
 import { Button } from '@/components/ui/button'
 
+// Number of high-quality samples to capture before finalizing enrollment.
+// More samples = more robust averaged descriptor.
+const ENROLLMENT_SAMPLE_COUNT = 7
+
+// Minimum detection confidence accepted during enrollment.
+// Higher than scanner threshold because enrollment quality is critical.
+const ENROLLMENT_MIN_CONFIDENCE = 0.80
+
 interface FaceEnrollmentModalProps {
   studentId: string
   studentName: string
@@ -31,20 +39,24 @@ export default function FaceEnrollmentModal({
   const finishingRef = useRef(false)
 
   // Load face-api models
+  // SSD MobileNet v1 is used for enrollment instead of TinyFaceDetector because:
+  //  - Enrollment is a one-time operation, so speed doesn't matter
+  //  - SSD is significantly more accurate at detecting faces
+  //  - Better detection → better face alignment → better descriptor quality
+  // faceExpressionNet is NOT loaded — it was never used for matching.
   useEffect(() => {
     const loadModels = async () => {
       try {
         const MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.13/model/'
         await Promise.all([
-          faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+          faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL),
           faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
           faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
-          faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL),
         ])
         setModelsLoaded(true)
         setLoading(false)
       } catch (err) {
-        console.error('[v0] Error loading models:', err)
+        console.error('[enrollment] Error loading models:', err)
         setError('Failed to load face recognition models')
         setLoading(false)
       }
@@ -86,7 +98,7 @@ export default function FaceEnrollmentModal({
       setCameraActive(true)
       setError(null)
     } catch (err) {
-      console.error('[v0] Camera error:', err)
+      console.error('[enrollment] Camera error:', err)
       setError('Failed to access camera. Please check permissions.')
     }
   }
@@ -109,29 +121,32 @@ export default function FaceEnrollmentModal({
   const startCapturing = async () => {
     if (!modelsLoaded || !videoRef.current || !canvasRef.current) return
 
-    console.log('[v0] Starting face capture process...')
+    console.log('[enrollment] Starting face capture process...')
     setCapturing(true)
     setCapturedFrames([])
     finishingRef.current = false
-    setGuidanceMessage('Hold still. We are collecting 5 high-quality face samples.')
+    setGuidanceMessage(`Hold still. We are collecting ${ENROLLMENT_SAMPLE_COUNT} high-quality face samples.`)
     setError(null)
     let frameCount = 0
 
     detectionIntervalRef.current = setInterval(async () => {
       if (!videoRef.current || !canvasRef.current) {
-        console.log('[v0] Video or canvas ref not available')
+        console.log('[enrollment] Video or canvas ref not available')
         return
       }
 
       try {
+        // Use SSD MobileNet v1 for higher accuracy during enrollment.
+        // minConfidence is set high to ensure only high-quality detections are captured.
         const detections = await faceapi
-          .detectAllFaces(videoRef.current, new faceapi.TinyFaceDetectorOptions())
+          .detectAllFaces(videoRef.current, new faceapi.SsdMobilenetv1Options({
+            minConfidence: ENROLLMENT_MIN_CONFIDENCE,
+          }))
           .withFaceLandmarks()
           .withFaceDescriptors()
-          .withFaceExpressions()
 
         frameCount++
-        console.log(`[v0] Frame ${frameCount} - Detected ${detections.length} faces`)
+        console.log(`[enrollment] Frame ${frameCount} - Detected ${detections.length} faces`)
 
         if (detections.length === 0) {
           setError('Face not visible. Please center your face in the frame.')
@@ -160,7 +175,7 @@ export default function FaceEnrollmentModal({
         const leftEyeY = leftEye.reduce((sum, p) => sum + p.y, 0) / leftEye.length
         const rightEyeY = rightEye.reduce((sum, p) => sum + p.y, 0) / rightEye.length
         const tilt = Math.abs(leftEyeY - rightEyeY)
-        console.log(`[v0] Face detected with confidence: ${confidence}`)
+        console.log(`[enrollment] Face detected with confidence: ${confidence.toFixed(3)}`)
 
         if (ratio < 0.1) {
           setError('Face is too far. Please move closer to camera.')
@@ -186,9 +201,26 @@ export default function FaceEnrollmentModal({
           return
         }
 
-        if (confidence < 0.7) {
+        if (confidence < ENROLLMENT_MIN_CONFIDENCE) {
           setError(`Low quality detection (${(confidence * 100).toFixed(1)}%). Improve light or clean lens.`)
           setGuidanceMessage('Face not clear. Clean lens, remove cap, and look straight.')
+          return
+        }
+
+        // Validate descriptor is not corrupted (NaN or zero-vector)
+        const descriptor = detection.descriptor
+        let hasNaN = false
+        let sumSq = 0
+        for (let i = 0; i < descriptor.length; i++) {
+          if (!Number.isFinite(descriptor[i])) {
+            hasNaN = true
+            break
+          }
+          sumSq += descriptor[i] * descriptor[i]
+        }
+        if (hasNaN || sumSq < 0.001) {
+          console.warn('[enrollment] Skipping frame: descriptor is corrupted (NaN or zero-vector)')
+          setError('Detection quality too low. Adjust lighting and try again.')
           return
         }
 
@@ -200,13 +232,12 @@ export default function FaceEnrollmentModal({
             box: detection.detection.box,
           },
           landmarks: detection.landmarks,
-          expressions: detection.expressions,
           timestamp: new Date().toISOString(),
         }
 
         setCapturedFrames((prev) => {
           const newFrames = [...prev, faceData]
-          console.log(`[v0] Frame captured - Total frames: ${newFrames.length}/5`)
+          console.log(`[enrollment] Frame captured - Total frames: ${newFrames.length}/${ENROLLMENT_SAMPLE_COUNT}`)
           return newFrames
         })
 
@@ -230,14 +261,14 @@ export default function FaceEnrollmentModal({
           faceapi.draw.drawFaceLandmarks(canvasRef.current, resizedDetections)
         }
       } catch (err) {
-        console.error('[v0] Detection error:', err)
+        console.error('[enrollment] Detection error:', err)
         setError('Error processing face. Please try again.')
       }
-    }, 300)  // Check every 300ms for faster captures
+    }, 350)  // Slightly slower interval for more stable SSD detection
   }
 
   useEffect(() => {
-    if (!capturing || capturedFrames.length < 5 || finishingRef.current) {
+    if (!capturing || capturedFrames.length < ENROLLMENT_SAMPLE_COUNT || finishingRef.current) {
       return
     }
 
@@ -249,7 +280,7 @@ export default function FaceEnrollmentModal({
   // Complete enrollment with captured frames
   const completeEnrollment = async (frames: any[]) => {
     try {
-      console.log('[face-enrollment] Starting enrollment completion with', frames.length, 'frames')
+      console.log('[enrollment] Starting enrollment completion with', frames.length, 'frames')
       setCapturing(false)
       setGuidanceMessage('Processing and saving face data...')
       if (detectionIntervalRef.current) {
@@ -257,16 +288,77 @@ export default function FaceEnrollmentModal({
         detectionIntervalRef.current = null
       }
 
-      // Average the descriptors from all frames
-      const descriptors = frames.map((f) => f.descriptor)
-      const avgDescriptor = new Float32Array(descriptors[0].length)
+      const descriptors = frames.map((f) => f.descriptor as Float32Array)
+      const dimSize = descriptors[0].length
 
-      for (let i = 0; i < descriptors[0].length; i++) {
+      // ---------------------------------------------------------------
+      // Outlier rejection: compute pairwise cosine similarities and
+      // discard any descriptor whose average similarity to others is
+      // below 0.85 — this removes frames where the face was partially
+      // occluded, poorly lit, or had motion blur.
+      // ---------------------------------------------------------------
+      const cosineSim = (a: Float32Array, b: Float32Array): number => {
+        let dot = 0, normA = 0, normB = 0
+        for (let i = 0; i < a.length; i++) {
+          dot += a[i] * b[i]
+          normA += a[i] * a[i]
+          normB += b[i] * b[i]
+        }
+        if (normA === 0 || normB === 0) return 0
+        return dot / (Math.sqrt(normA) * Math.sqrt(normB))
+      }
+
+      const avgSimilarities = descriptors.map((desc, i) => {
+        let totalSim = 0
+        let count = 0
+        for (let j = 0; j < descriptors.length; j++) {
+          if (i === j) continue
+          totalSim += cosineSim(desc, descriptors[j])
+          count++
+        }
+        return count > 0 ? totalSim / count : 0
+      })
+
+      // Keep descriptors whose average similarity to others is >= 0.85
+      const filteredDescriptors = descriptors.filter((_, i) => avgSimilarities[i] >= 0.85)
+      const usedDescriptors = filteredDescriptors.length >= 3 ? filteredDescriptors : descriptors
+
+      console.log(`[enrollment] Outlier filter: ${descriptors.length} total, ${filteredDescriptors.length} passed, using ${usedDescriptors.length}`)
+
+      // Average the descriptors, then L2-normalize.
+      // Normalization is critical: averaging raw vectors shrinks the magnitude,
+      // which breaks Euclidean distance thresholds in FaceMatcher.
+      const avgDescriptor = new Float32Array(dimSize)
+      for (let i = 0; i < dimSize; i++) {
         let sum = 0
-        for (const descriptor of descriptors) {
+        for (const descriptor of usedDescriptors) {
           sum += descriptor[i]
         }
-        avgDescriptor[i] = sum / descriptors.length
+        avgDescriptor[i] = sum / usedDescriptors.length
+      }
+
+      // L2-normalize so all enrolled vectors sit on the unit hypersphere
+      let norm = 0
+      for (let i = 0; i < avgDescriptor.length; i++) {
+        norm += avgDescriptor[i] * avgDescriptor[i]
+      }
+      norm = Math.sqrt(norm)
+      if (norm > 0) {
+        for (let i = 0; i < avgDescriptor.length; i++) {
+          avgDescriptor[i] /= norm
+        }
+      }
+
+      // Final validation: ensure the averaged descriptor is not corrupted
+      let hasInvalidValues = false
+      for (let i = 0; i < avgDescriptor.length; i++) {
+        if (!Number.isFinite(avgDescriptor[i])) {
+          hasInvalidValues = true
+          break
+        }
+      }
+      if (hasInvalidValues) {
+        throw new Error('Face descriptor computation produced invalid values. Please try again with better lighting.')
       }
 
       const avgScore = frames.reduce((sum, f) => sum + f.detection.score, 0) / frames.length
@@ -275,30 +367,35 @@ export default function FaceEnrollmentModal({
         studentId,
         descriptor: Array.from(avgDescriptor),
         frameCount: frames.length,
+        usedFrameCount: usedDescriptors.length,
         timestamp: new Date().toISOString(),
         metadata: {
           avgScore: avgScore,
           frameScores: frames.map((f) => f.detection.score),
+          outliersRemoved: descriptors.length - usedDescriptors.length,
         },
       }
 
-      console.log('[face-enrollment] Face enrollment data prepared:', {
+      console.log('[enrollment] Face enrollment data prepared:', {
         studentId,
         frameCount: frames.length,
+        usedFrameCount: usedDescriptors.length,
+        outliersRemoved: descriptors.length - usedDescriptors.length,
         avgScore: avgScore.toFixed(3),
+        descriptorDim: avgDescriptor.length,
       })
 
-      console.log('[face-enrollment] Sending enrollment data to parent component')
+      console.log('[enrollment] Sending enrollment data to parent component')
       await onEnrollmentComplete(enrollmentData)
       
-      console.log('[face-enrollment] Enrollment complete callback finished successfully')
+      console.log('[enrollment] Enrollment complete callback finished successfully')
 
       // Stop camera before showing success
       stopCamera()
       setSuccess(true)
     } catch (err) {
-      console.error('[face-enrollment] Error completing enrollment:', err)
-      setError('Error saving face data. Please try again.')
+      console.error('[enrollment] Error completing enrollment:', err)
+      setError(err instanceof Error ? err.message : 'Error saving face data. Please try again.')
       finishingRef.current = false
       setCapturing(false)
     }
@@ -347,7 +444,7 @@ export default function FaceEnrollmentModal({
         <div className="grid gap-0 lg:grid-cols-[1.4fr_0.9fr]">
           <div className="p-6">
             <p className="mb-4 text-sm text-slate-600">
-              Position your face in the camera frame. We&apos;ll capture 5 images for better recognition accuracy.
+              Position your face in the camera frame. We&apos;ll capture {ENROLLMENT_SAMPLE_COUNT} images for better recognition accuracy.
             </p>
 
             {error && (
@@ -385,12 +482,12 @@ export default function FaceEnrollmentModal({
                 <div className="absolute inset-0 flex flex-col items-center justify-between p-4 pointer-events-none">
                   <div className="w-full max-w-sm rounded-2xl bg-slate-950/80 p-4 text-center text-white shadow-xl backdrop-blur">
                     <p className="mb-2 text-lg font-semibold">Face Recognition in Progress</p>
-                    <p className="text-sm text-emerald-300">Frames captured: {capturedFrames.length} / 5</p>
+                    <p className="text-sm text-emerald-300">Frames captured: {capturedFrames.length} / {ENROLLMENT_SAMPLE_COUNT}</p>
                     <p className="mt-2 text-xs text-amber-200">{guidanceMessage}</p>
                   </div>
                   <div className="w-full max-w-sm rounded-2xl bg-slate-950/80 p-4 shadow-xl backdrop-blur">
                     <div className="flex gap-2">
-                      {Array.from({ length: 5 }).map((_, i) => (
+                      {Array.from({ length: ENROLLMENT_SAMPLE_COUNT }).map((_, i) => (
                         <div
                           key={i}
                           className={`h-3 flex-1 rounded-full transition-all ${
@@ -400,7 +497,7 @@ export default function FaceEnrollmentModal({
                       ))}
                     </div>
                     <p className="mt-2 text-center text-xs text-white/80">
-                      {capturedFrames.length === 5 ? 'Processing...' : 'Hold still...'}
+                      {capturedFrames.length === ENROLLMENT_SAMPLE_COUNT ? 'Processing...' : 'Hold still...'}
                     </p>
                   </div>
                 </div>
@@ -412,16 +509,16 @@ export default function FaceEnrollmentModal({
             <div className="space-y-4">
               <div className="rounded-2xl border border-slate-200 bg-white p-4">
                 <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Guidance</p>
-                <p className="mt-2 text-sm text-slate-600">Keep your face centered, well lit, and look directly into the camera for five samples.</p>
+                <p className="mt-2 text-sm text-slate-600">Keep your face centered, well lit, and look directly into the camera for {ENROLLMENT_SAMPLE_COUNT} samples.</p>
               </div>
               <div className="rounded-2xl border border-slate-200 bg-white p-4">
                 <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Capture Status</p>
-                <div className="mt-3 grid grid-cols-5 gap-2">
-                  {Array.from({ length: 5 }).map((_, i) => (
+                <div className="mt-3 grid grid-cols-7 gap-2">
+                  {Array.from({ length: ENROLLMENT_SAMPLE_COUNT }).map((_, i) => (
                     <div key={i} className={`h-3 rounded-full ${i < capturedFrames.length ? 'bg-[#2b5c9e]' : 'bg-slate-200'}`} />
                   ))}
                 </div>
-                <p className="mt-2 text-xs text-slate-500">{capturedFrames.length} of 5 samples captured</p>
+                <p className="mt-2 text-xs text-slate-500">{capturedFrames.length} of {ENROLLMENT_SAMPLE_COUNT} samples captured</p>
               </div>
 
               {!cameraActive ? (

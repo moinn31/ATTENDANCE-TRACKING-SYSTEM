@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import Link from 'next/link'
@@ -9,6 +10,7 @@ import { DashboardShell } from '@/components/dashboard-shell'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
 import { Users, UserRound, ShieldCheck, Clock3 } from 'lucide-react'
+import { useAuth } from '@/hooks/use-auth'
 
 interface Student {
   id: string
@@ -18,6 +20,8 @@ interface Student {
 }
 
 export default function StudentsPage() {
+  const { user, loading: authLoading } = useAuth()
+  const router = useRouter()
   const [students, setStudents] = useState<Student[]>([])
   const [loading, setLoading] = useState(true)
   const [showAddForm, setShowAddForm] = useState(false)
@@ -27,38 +31,12 @@ export default function StudentsPage() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const getAuthHeaders = (isJson = false) => {
-    // Safe access to localStorage (might not be available during SSR)
-    const token = typeof window !== 'undefined' ? window.localStorage.getItem('token') : null
-    const headers: Record<string, string> = {}
-
-    if (isJson) {
-      headers['Content-Type'] = 'application/json'
-    }
-
-    if (token) {
-      headers.Authorization = `Bearer ${token}`
-    }
-
-    return headers
-  }
-
   const fetchStudents = async () => {
     try {
       setLoading(true)
       
-      // Check if token exists before attempting to fetch
-      const token = typeof window !== 'undefined' ? window.localStorage.getItem('token') : null
-      
-      if (!token) {
-        setError('🔐 Not authenticated. Please login first.')
-        setStudents([])
-        return
-      }
-      
-      const response = await fetch('/api/students', {
+      const response = await fetch('/api/students?includeEmbeddings=true', {
         cache: 'no-store',
-        headers: getAuthHeaders(),
       })
 
       let payload: any = {}
@@ -70,11 +48,7 @@ export default function StudentsPage() {
 
       if (!response.ok) {
         if (response.status === 401) {
-          setError('🔐 Authentication failed. Please login again.')
-          if (typeof window !== 'undefined') {
-            window.localStorage.removeItem('token')
-          }
-          setStudents([])
+          router.replace('/auth/login')
           return
         }
         throw new Error(payload.error || 'Failed to load students')
@@ -94,19 +68,11 @@ export default function StudentsPage() {
     }
   }
 
-  // Check authentication on component mount
   useEffect(() => {
-    if (typeof window === 'undefined') return
-    
-    const token = window.localStorage.getItem('token')
-    if (!token) {
-      setError('🔐 Authentication Required: Please login to manage students')
+    if (!authLoading) {
+      void fetchStudents()
     }
-  }, [])
-
-  useEffect(() => {
-    void fetchStudents()
-  }, [])
+  }, [authLoading])
 
   const handleAddStudent = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -122,7 +88,7 @@ export default function StudentsPage() {
 
       const response = await fetch('/api/students', {
         method: 'POST',
-        headers: getAuthHeaders(true),
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: newStudent.name.trim(),
           roll_number: newStudent.roll_number.trim(),
@@ -161,7 +127,7 @@ export default function StudentsPage() {
 
       const response = await fetch(`/api/students/${id}`, {
         method: 'DELETE',
-        headers: getAuthHeaders(),
+
       })
       const payload = await response.json()
 
@@ -192,7 +158,7 @@ export default function StudentsPage() {
 
       const response = await fetch(`/api/students/${faceData.studentId}/face-enrollment`, {
         method: 'POST',
-        headers: getAuthHeaders(true),
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           descriptor: Array.from(faceData.descriptor),
         }),
@@ -210,7 +176,7 @@ export default function StudentsPage() {
       // Refetch the entire students list from API to ensure database state is reflected
       const refreshResponse = await fetch('/api/students', {
         cache: 'no-store',
-        headers: getAuthHeaders(),
+
       })
       
       if (refreshResponse.ok) {
@@ -447,13 +413,20 @@ export default function StudentsPage() {
                   <td className="px-6 py-4 text-foreground">{student.name}</td>
                   <td className="px-6 py-4 text-foreground">{student.roll_number || '-'}</td>
                   <td className="px-6 py-4">
-                    <span className={`inline-block px-3 py-1 rounded-full text-xs font-semibold ${
-                      student.face_enrolled 
-                        ? 'bg-green-100 text-green-800' 
-                        : 'bg-amber-100 text-amber-800'
-                    }`}>
-                      {student.face_enrolled ? 'Enrolled' : 'Pending'}
-                    </span>
+                    <div className="flex flex-col gap-1">
+                      <span className={`inline-block px-3 py-1 rounded-full text-xs font-semibold w-fit ${
+                        student.face_enrolled 
+                          ? 'bg-green-100 text-green-800' 
+                          : 'bg-amber-100 text-amber-800'
+                      }`}>
+                        {student.face_enrolled ? 'Enrolled' : 'Pending'}
+                      </span>
+                      {student.face_enrolled && (student as any).embedding_vector && (student as any).embedding_vector.length !== 128 && (
+                        <span className="text-[10px] text-red-600 font-medium">
+                          ⚠ Incompatible data ({ (student as any).embedding_vector.length }d). Please re-enroll.
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex gap-2">

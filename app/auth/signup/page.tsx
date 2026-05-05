@@ -5,8 +5,10 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { useAuth } from '@/hooks/use-auth'
 
 export default function SignupPage() {
+  const { user, loading: authLoading } = useAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -15,11 +17,10 @@ export default function SignupPage() {
   const router = useRouter()
 
   useEffect(() => {
-    const token = window.localStorage.getItem('token')
-    if (token) {
+    if (!authLoading && user) {
       router.replace('/')
     }
-  }, [router])
+  }, [authLoading, user, router])
 
   const handleSignup = async (event: React.FormEvent) => {
     event.preventDefault()
@@ -61,7 +62,6 @@ export default function SignupPage() {
         return
       }
 
-      window.localStorage.setItem('token', loginPayload.token)
       router.replace('/')
       router.refresh()
     } catch {

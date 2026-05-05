@@ -1,4 +1,4 @@
-import { verifyToken } from '@/lib/auth.js'
+import { verifyToken } from '@/lib/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
 /**
@@ -229,7 +229,8 @@ export async function GET(request: NextRequest) {
           }, { status: 404 });
         }
       } catch (err) {
-        return NextResponse.json({ error: 'Failed to read analytics report: ' + err.message }, { status: 500 });
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        return NextResponse.json({ error: 'Failed to read analytics report: ' + errorMessage }, { status: 500 });
       }
     }
 

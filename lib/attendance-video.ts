@@ -42,6 +42,7 @@ type VideoRecognitionOptions = {
   minBoxRatio?: number
   duplicateSimilarityThreshold?: number
   minBlurScore?: number
+  detectorType?: 'tiny' | 'ssd'
   onStatus?: (message: string) => void
   onProgress?: (progress: number, processedFrames: number, totalFrames: number) => void
   onFramePreview?: (frame: VideoFramePreview) => void
@@ -51,10 +52,11 @@ const DEFAULT_OPTIONS: Required<Omit<VideoRecognitionOptions, 'onStatus' | 'onPr
   targetFps: 30,
   durationHintSeconds: 0,
   frameStride: 1,
-  minDetectionScore: 0.10,
-  minBoxRatio: 0.005,
+  minDetectionScore: 0.40, // More lenient detection
+  minBoxRatio: 0.001,      // More lenient for small/far faces
   duplicateSimilarityThreshold: 0.95,
-  minBlurScore: 0.5,
+  minBlurScore: 0.1,       // Much more lenient for video frames
+  detectorType: 'ssd', 
 }
 
 const cosineSimilarity = (left: Float32Array, right: Float32Array) => {
@@ -152,7 +154,7 @@ const estimateBlurScore = (canvas: HTMLCanvasElement, box: faceapi.Box) => {
   cropCanvas.width = cropSize
   cropCanvas.height = cropSize
 
-  const context = cropCanvas.getContext('2d')
+  const context = cropCanvas.getContext('2d', { willReadFrequently: true })
   if (!context) {
     return 0
   }
@@ -202,39 +204,56 @@ const processFrameCanvas = async (
   frameIndex: number,
   enrolledStudents: EnrolledFace[],
   faceMatcher: faceapi.FaceMatcher,
-  mergedOptions: Required<Omit<VideoRecognitionOptions, 'onStatus' | 'onProgress'>>,
+  mergedOptions: Required<Omit<VideoRecognitionOptions, 'onStatus' | 'onProgress' | 'onFramePreview'>>,
   uniqueCandidates: FrameCandidate[],
 ) => {
+  const detectorOptions = mergedOptions.detectorType === 'ssd' 
+    ? new faceapi.SsdMobilenetv1Options({ minConfidence: mergedOptions.minDetectionScore })
+    : new faceapi.TinyFaceDetectorOptions({ inputSize: 640, scoreThreshold: mergedOptions.minDetectionScore })
+
   const detections = await faceapi
-    .detectAllFaces(
-      canvas,
-      new faceapi.TinyFaceDetectorOptions({
-        inputSize: 512,
-        scoreThreshold: mergedOptions.minDetectionScore,
-      }),
-    )
+    .detectAllFaces(canvas, detectorOptions as any)
     .withFaceLandmarks()
     .withFaceDescriptors()
+
+  console.log(`[attendance-video] Frame ${frameIndex}: Detected ${detections.length} face(s) using ${mergedOptions.detectorType} with scoreThreshold ${mergedOptions.minDetectionScore}`)
 
   if (detections.length === 0) {
     return
   }
+
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })
 
   for (const detection of detections) {
     const detectionScore = detection.detection.score
     const box = detection.detection.box
     const boxRatio = (box.width * box.height) / (canvas.width * canvas.height)
 
+    // Drawing debug info on canvas if context exists
+    if (ctx) {
+      ctx.strokeStyle = '#00ff00'
+      ctx.lineWidth = 3
+      ctx.strokeRect(box.x, box.y, box.width, box.height)
+      ctx.fillStyle = '#00ff00'
+      ctx.font = '16px monospace'
+      ctx.fillText(`Score: ${detectionScore.toFixed(2)}`, box.x, box.y > 20 ? box.y - 5 : box.y + 20)
+    }
+
+    console.log(`[attendance-video] Face detected - Score: ${detectionScore.toFixed(4)}, BoxRatio: ${boxRatio.toFixed(4)}, Descriptor length: ${detection.descriptor.length}`)
+
     if (detectionScore < mergedOptions.minDetectionScore) {
+      console.log(`[attendance-video] Face rejected: score ${detectionScore.toFixed(4)} < min ${mergedOptions.minDetectionScore}`)
       continue
     }
 
     if (boxRatio < mergedOptions.minBoxRatio) {
+      console.log(`[attendance-video] Face rejected: boxRatio ${boxRatio.toFixed(4)} < min ${mergedOptions.minBoxRatio}`)
       continue
     }
 
     const blurScore = estimateBlurScore(canvas, box)
     if (blurScore < mergedOptions.minBlurScore) {
+      console.log(`[attendance-video] Face rejected: blurScore ${blurScore.toFixed(4)} < min ${mergedOptions.minBlurScore}`)
       continue
     }
 
@@ -292,18 +311,39 @@ const analyzeWithFrameCallbacks = async (
   const knownEndTime = knownDuration > 0 ? Math.max(0, knownDuration - 0.01) : Number.POSITIVE_INFINITY
 
   await new Promise<void>((resolve, reject) => {
+    let isResolved = false
+    const safeResolve = () => {
+      if (!isResolved) {
+        isResolved = true
+        video.onended = null
+        video.onerror = null
+        console.log('[analyzeWithFrameCallbacks] Loop resolved via onended or boundary check.')
+        resolve()
+      }
+    }
+
+    video.onended = safeResolve
+    video.onerror = (e) => {
+      if (!isResolved) {
+        isResolved = true
+        reject(e)
+      }
+    }
+
     const scheduleNext = () => {
+      if (isResolved) return
+
       frameCallback.call(video, async (_now, metadata) => {
         try {
           if (video.ended || metadata.mediaTime >= knownEndTime) {
-            resolve()
+            safeResolve()
             return
           }
 
           if (video.videoWidth > 0 && video.videoHeight > 0 && callbackFrameIndex % frameStride === 0) {
             canvas.width = video.videoWidth
             canvas.height = video.videoHeight
-            const context = canvas.getContext('2d')
+            const context = canvas.getContext('2d', { willReadFrequently: true })
             if (context) {
               context.drawImage(video, 0, 0, canvas.width, canvas.height)
               await processFrameCanvas(
@@ -408,10 +448,26 @@ export async function analyzeAttendanceVideo(
   const hiddenCanvas = document.createElement('canvas')
 
   try {
-    const labeledDescriptors = enrolledStudents.map(
-      (student) => new faceapi.LabeledFaceDescriptors(student.id, [student.descriptor]),
-    )
-    const faceMatcher = new faceapi.FaceMatcher(labeledDescriptors, 0.65)
+    const labeledDescriptors = enrolledStudents
+      .filter((student) => {
+        if (student.descriptor.length !== 128) {
+          console.warn(`[analyzeAttendanceVideo] Skipping student ${student.name} (${student.id}): descriptor dimension is ${student.descriptor.length}, but 128 is required for face-api.js`)
+          return false
+        }
+        return true
+      })
+      .map(
+        (student) => new faceapi.LabeledFaceDescriptors(student.id, [student.descriptor]),
+      )
+
+    console.log(`[analyzeAttendanceVideo] Created ${labeledDescriptors.length} labeled descriptors from ${enrolledStudents.length} students.`)
+
+    if (labeledDescriptors.length === 0) {
+      options.onStatus?.('No compatible (128-d) face embeddings found. Please re-enroll student faces.')
+      return []
+    }
+
+    const faceMatcher = new faceapi.FaceMatcher(labeledDescriptors, 0.75)
 
     const uniqueCandidates: FrameCandidate[] = []
 
@@ -441,12 +497,37 @@ export async function analyzeAttendanceVideo(
         options.onFramePreview,
       )
     }
+    
+    console.log(`[analyzeAttendanceVideo] Finished frame tracing. Unique candidates: ${uniqueCandidates.length}`)
+    options.onStatus?.(`Recognition step: Matching ${uniqueCandidates.length} face(s) against roster...`)
 
     const recognized = new Map<string, VideoRecognitionMatch>()
 
-    uniqueCandidates.forEach((candidate) => {
+    console.log(`[analyzeAttendanceVideo] Post-analysis: Processing ${uniqueCandidates.length} unique candidates. Labeled descriptors: ${labeledDescriptors.length}`)
+    
+    uniqueCandidates.forEach((candidate, idx) => {
+      console.log(`[analyzeAttendanceVideo] Evaluating candidate ${idx}...`)
+      if (idx === 0) {
+        console.log(`[analyzeAttendanceVideo] First candidate descriptor - Length: ${candidate.descriptor.length}, Sample: [${candidate.descriptor.slice(0, 3).join(', ')}]`)
+      }
+
+      if (candidate.descriptor.length !== 128) {
+        console.warn(`[analyzeAttendanceVideo] Skipping candidate ${idx}: dimension ${candidate.descriptor.length} != 128`)
+        return
+      }
+
       const bestMatch = faceMatcher.findBestMatch(candidate.descriptor)
+      console.log(`[analyzeAttendanceVideo] Candidate ${idx} best match: ${bestMatch.toString()} (Dist: ${bestMatch.distance.toFixed(4)})`)
+      
       if (bestMatch.label === 'unknown') {
+        const closest = enrolledStudents.map(s => ({
+          name: s.name,
+          dist: faceapi.euclideanDistance(candidate.descriptor, s.descriptor)
+        })).sort((a, b) => a.dist - b.dist)[0]
+        
+        if (closest) {
+          console.log(`[analyzeAttendanceVideo] Nearest student for candidate ${idx}: ${closest.name} (Dist: ${closest.dist.toFixed(4)})`)
+        }
         return
       }
 
@@ -455,7 +536,8 @@ export async function analyzeAttendanceVideo(
         return
       }
 
-      const confidence = Math.max(0, Math.min(100, Math.round((1 - bestMatch.distance / 1.2) * 100)))
+      // Map Euclidean distance [0, 1] → confidence [100, 0] linearly
+      const confidence = Math.max(0, Math.min(100, Math.round((1 - bestMatch.distance) * 100)))
       const existing = recognized.get(student.id)
 
       if (!existing) {
@@ -478,7 +560,22 @@ export async function analyzeAttendanceVideo(
       })
     })
 
-    return Array.from(recognized.values()).sort((left, right) => right.confidence - left.confidence)
+    console.log(`[analyzeAttendanceVideo] Finalizing analysis. Unique candidates: ${uniqueCandidates.length}`)
+    // Multi-frame confirmation: 
+    // to prevent single-frame noise from creating false positives.
+    const confirmed = Array.from(recognized.values())
+      .filter((match) => match.frameCount >= 1)
+      .sort((left, right) => right.confidence - left.confidence)
+
+    console.log(`[analyzeAttendanceVideo] Analysis complete. Recognized ${confirmed.length} student(s).`)
+    
+    if (confirmed.length > 0) {
+      options.onStatus?.(`Recognition success! Found ${confirmed.length} student(s).`)
+    } else {
+      options.onStatus?.('No students recognized. Try checking lighting or re-enrolling.')
+    }
+
+    return confirmed
   } finally {
     URL.revokeObjectURL(objectUrl)
     video.removeAttribute('src')

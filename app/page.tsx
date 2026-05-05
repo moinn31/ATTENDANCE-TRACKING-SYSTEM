@@ -9,6 +9,7 @@ import {
   Users, GraduationCap, CheckCircle2, XCircle, TrendingUp,
   RefreshCcw, Activity
 } from 'lucide-react'
+import { useAuth } from '@/hooks/use-auth'
 
 interface DashboardData {
   today: {
@@ -35,6 +36,7 @@ interface DashboardData {
 }
 
 export default function Home() {
+  const { logout, loading: authLoading } = useAuth()
   const router = useRouter()
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
@@ -42,19 +44,9 @@ export default function Home() {
 
   const fetchDashboard = useCallback(async () => {
     try {
-      const token = window.localStorage.getItem('token')
-      if (!token) {
-        window.localStorage.removeItem('token')
-        router.replace('/auth/login')
-        return
-      }
-
-      const res = await fetch('/api/dashboard', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      })
+      const res = await fetch('/api/dashboard')
 
       if (res.status === 401) {
-        window.localStorage.removeItem('token')
         router.replace('/auth/login')
         return
       }
@@ -72,10 +64,25 @@ export default function Home() {
   }, [router])
 
   useEffect(() => {
-    fetchDashboard()
-    const interval = setInterval(fetchDashboard, 15000)
-    return () => clearInterval(interval)
-  }, [fetchDashboard])
+    if (!authLoading) {
+      fetchDashboard()
+      const interval = setInterval(fetchDashboard, 15000)
+      return () => clearInterval(interval)
+    }
+  }, [fetchDashboard, authLoading])
+
+  if (authLoading) {
+    return (
+      <div className="flex h-screen w-full items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-4">
+          <RefreshCcw className="size-10 animate-spin text-primary" />
+          <p className="text-lg font-medium text-muted-foreground animate-pulse">
+            Authenticating...
+          </p>
+        </div>
+      </div>
+    )
+  }
 
   const formatTime = (isoString: string) => {
     if (!isoString) return '-'

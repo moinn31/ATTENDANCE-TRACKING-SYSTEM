@@ -19,13 +19,22 @@ const execPromise = promisify(exec);
 // Simple queue to prevent concurrent docker exec commands from colliding
 let writeQueue = Promise.resolve();
 
-export async function saveToHadoop(record) {
+interface AttendanceRecord {
+  student_id: string;
+  status: 'present' | 'absent' | 'late';
+  confidence?: number;
+  date: string;
+  class_name?: string | null;
+  subject_name?: string | null;
+}
+
+export async function saveToHadoop(record: AttendanceRecord) {
   // Queue writes so they execute one at a time
-  writeQueue = writeQueue.then(() => _doSave(record)).catch(() => {});
+  writeQueue = writeQueue.then(async () => { await _doSave(record); }).catch(() => {});
   return writeQueue;
 }
 
-async function _doSave(record) {
+async function _doSave(record: AttendanceRecord) {
   const uniqueId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const tmpFileName = `hdfs_${uniqueId}.csv`;
   const tmpFile = path.join(process.cwd(), 'data', tmpFileName);
@@ -63,7 +72,7 @@ async function _doSave(record) {
     
     console.log(`[Hadoop] Record saved to HDFS: ${hdfsFile}`);
     return true;
-  } catch (error) {
+  } catch (error: any) {
     console.error('[Hadoop] Failed to save record:', error.message);
     return false;
   } finally {

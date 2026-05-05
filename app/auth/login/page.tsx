@@ -6,19 +6,15 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
+import { useAuth } from '@/hooks/use-auth'
+
 export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const { login } = useAuth()
   const router = useRouter()
-
-  useEffect(() => {
-    const token = window.localStorage.getItem('token')
-    if (token) {
-      router.replace('/')
-    }
-  }, [router])
 
   const handleLogin = async (event: React.FormEvent) => {
     event.preventDefault()
@@ -26,25 +22,10 @@ export default function LoginPage() {
     setLoading(true)
 
     try {
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      })
-
-      const payload = await response.json()
-
-      if (!response.ok) {
-        setError(payload.error || 'Login failed')
-        setLoading(false)
-        return
-      }
-
-      window.localStorage.setItem('token', payload.token)
-      router.replace('/')
-      router.refresh()
-    } catch {
-      setError('An unexpected error occurred')
+      await login(email, password)
+      // Redirect happens inside useAuth.login
+    } catch (err: any) {
+      setError(err.message || 'Login failed')
       setLoading(false)
     }
   }

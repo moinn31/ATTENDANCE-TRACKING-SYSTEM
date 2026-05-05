@@ -17,3 +17,11 @@ scripts/models/
 
 # Data
 data/
+scratch/
+.gemini/
+*.pt
+*.pt.*
+*.weights
+*.h5
+*.onnx
+*.tsbuildinfo

@@ -1,7 +1,7 @@
-import pool from '@/lib/db.js'
-import { verifyToken } from '@/lib/auth.js'
+import pool from '@/lib/db'
+import { verifyToken } from '@/lib/auth'
 import { NextRequest, NextResponse } from 'next/server'
-import { saveToHadoop } from '@/lib/hadoop.js'
+import { saveToHadoop } from '@/lib/hadoop'
 
 type AttendanceRow = {
   id: string
@@ -67,7 +67,7 @@ export async function GET(request: NextRequest) {
       values,
     )
 
-    const attendance = rows.map((row) => ({
+    const attendance = rows.map((row: any) => ({
       id: row.id,
       student_id: row.student_id,
       student_name: row.student_name ?? 'Unknown',

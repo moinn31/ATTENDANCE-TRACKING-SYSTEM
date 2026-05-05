@@ -1,5 +1,5 @@
-import pool from '@/lib/db.js'
-import { verifyToken } from '@/lib/auth.js'
+import pool from '@/lib/db'
+import { verifyToken } from '@/lib/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
 interface RouteContext {

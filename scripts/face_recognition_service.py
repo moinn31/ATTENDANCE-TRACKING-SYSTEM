@@ -27,7 +27,7 @@ from pydantic import BaseModel
 # ---------------------------------------------------------------------------
 
 try:
-    import cv2
+    import cv2  # type: ignore[import-untyped]
     OPENCV_AVAILABLE = True
     OPENCV_IMPORT_ERROR = None
 except Exception as exc:
@@ -36,7 +36,7 @@ except Exception as exc:
     OPENCV_IMPORT_ERROR = str(exc)
 
 try:
-    import numpy as np
+    import numpy as np  # type: ignore[import-untyped]
     NUMPY_AVAILABLE = True
     NUMPY_IMPORT_ERROR = None
 except Exception as exc:
@@ -45,7 +45,7 @@ except Exception as exc:
     NUMPY_IMPORT_ERROR = str(exc)
 
 try:
-    from ultralytics import YOLO
+    from ultralytics import YOLO  # type: ignore[import-untyped]
     ULTRALYTICS_AVAILABLE = True
     ULTRALYTICS_IMPORT_ERROR = None
 except Exception as exc:
@@ -54,8 +54,9 @@ except Exception as exc:
     ULTRALYTICS_IMPORT_ERROR = str(exc)
 
 try:
-    from insightface.app import FaceAnalysis
-    import insightface
+    # Optional InsightFace imports for ArcFace support
+    from insightface.app import FaceAnalysis  # type: ignore[import-untyped]
+    import insightface  # type: ignore[import-untyped]
     INSIGHTFACE_AVAILABLE = True
     INSIGHTFACE_IMPORT_ERROR = None
     INSIGHTFACE_VERSION = getattr(insightface, '__version__', 'unknown')
@@ -64,6 +65,14 @@ except Exception as exc:
     INSIGHTFACE_AVAILABLE = False
     INSIGHTFACE_IMPORT_ERROR = str(exc)
     INSIGHTFACE_VERSION = None
+
+DEEPFACE_AVAILABLE = False
+try:
+    from deepface import DeepFace
+    DEEPFACE_AVAILABLE = True
+    print("DeepFace backend available (FaceNet 128-d)")
+except ImportError:
+    DEEPFACE_AVAILABLE = False
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -95,7 +104,7 @@ def _resolve_model_path(path_value: str) -> str:
 
 YOLO_FACE_MODEL = _resolve_model_path(os.getenv('YOLO_FACE_MODEL', 'models/yolov8m-face.pt'))
 ARCFACE_MODEL = os.getenv('ARCFACE_MODEL', 'buffalo_l')
-SIMILARITY_THRESHOLD = float(os.getenv('FACE_SIMILARITY_THRESHOLD', '0.40'))
+SIMILARITY_THRESHOLD = float(os.getenv('FACE_SIMILARITY_THRESHOLD', '0.55'))
 YOLO_CONF_THRESHOLD = float(os.getenv('YOLO_CONF_THRESHOLD', '0.25'))  # Lower for large crowds
 YOLO_IMG_SIZE = int(os.getenv('YOLO_IMG_SIZE', '1280'))  # Higher res for 80+ faces
 USE_GPU = _to_bool(os.getenv('USE_CUDA', 'false'))
@@ -261,25 +270,31 @@ def _ensure_models() -> Tuple[Optional[Any], Optional[Any]]:
     global _detection_mode
 
     yolo = _init_yolo()
-    analyzer = _init_insightface()
+    insightface_app = _init_insightface()
 
-    if analyzer is not None and yolo is not None:
-        _detection_mode = 'yolo+insightface'
-    elif analyzer is not None:
+    if yolo is not None and (insightface_app is not None or DEEPFACE_AVAILABLE):
+        _detection_mode = 'yolo+recognition'
+        logger.info(f"Detection mode: yolo + {'insightface' if insightface_app else 'deepface'}")
+    elif insightface_app is not None:
         _detection_mode = 'insightface_only'
+        logger.info("Detection mode: insightface_only")
     elif yolo is not None:
         _detection_mode = 'yolo_only'
+        logger.info("Detection mode: yolo_only (No embedding backend)")
     else:
+        _detection_mode = 'unavailable'
+        logger.error("No detection backends available")
         raise HTTPException(
             status_code=503,
             detail=(
-                'No face detection/recognition backend available. '
-                f'YOLO: {ULTRALYTICS_IMPORT_ERROR or "model file missing"}, '
-                f'InsightFace: {INSIGHTFACE_IMPORT_ERROR or "init failed"}'
-            ),
+                f'No face detection/recognition backend available. '
+                f'YOLO: {"loaded" if yolo else "missing"}, '
+                f'InsightFace: {INSIGHTFACE_IMPORT_ERROR or "init failed"}, '
+                f'DeepFace: {"available" if DEEPFACE_AVAILABLE else "missing"}'
+            )
         )
 
-    return yolo, analyzer
+    return yolo, insightface_app
 
 
 # ---------------------------------------------------------------------------
@@ -319,7 +334,10 @@ def _recognize_insightface_only(
     matches = []
     frame_h, frame_w = frame.shape[:2]
 
-    for face in faces:
+    # Collect ALL face-to-student similarity scores first, then assign exclusively.
+    candidate_scores: List[Tuple[int, StudentEmbedding, float, float, Optional[Any]]] = []
+
+    for face_idx, face in enumerate(faces):
         face_embedding = np.asarray(face.embedding, dtype=np.float32)
         if face_embedding.size == 0:
             continue
@@ -327,7 +345,7 @@ def _recognize_insightface_only(
         det_score = float(getattr(face, 'det_score', 0.0))
         bbox = getattr(face, 'bbox', None)
 
-        # Find the best matching student
+        # Find the best matching student for this face
         best_student: Optional[StudentEmbedding] = None
         best_similarity = -1.0
         for student, vector in student_vectors:
@@ -336,8 +354,17 @@ def _recognize_insightface_only(
                 best_similarity = similarity
                 best_student = student
 
-        if best_student is None or best_similarity < SIMILARITY_THRESHOLD:
-            continue
+        if best_student is not None and best_similarity >= SIMILARITY_THRESHOLD:
+            candidate_scores.append((face_idx, best_student, best_similarity, det_score, bbox))
+
+    # Exclusive matching: sort by similarity descending, each student matched at most once
+    candidate_scores.sort(key=lambda x: x[2], reverse=True)
+    matched_student_ids: set = set()
+
+    for face_idx, best_student, best_similarity, det_score, bbox in candidate_scores:
+        if best_student.id in matched_student_ids:
+            continue  # This student was already matched by a higher-similarity face
+        matched_student_ids.add(best_student.id)
 
         bbox_dict = {}
         if bbox is not None:
@@ -357,17 +384,33 @@ def _recognize_insightface_only(
     return face_count, matches
 
 
-def _recognize_yolo_plus_insightface(
+def _recognize_deepface(face_img):
+    """
+    Generate 128-d FaceNet embedding using DeepFace.
+    """
+    if not DEEPFACE_AVAILABLE:
+        return None
+    try:
+        # Use FaceNet model for 128-d compatibility with face-api.js
+        results = DeepFace.represent(face_img, model_name="Facenet", enforce_detection=False)
+        if results and len(results) > 0:
+            return np.array(results[0]["embedding"], dtype=np.float32)
+    except Exception as e:
+        logger.error(f"DeepFace recognition error: {e}")
+    return None
+
+
+def _recognize_yolo_plus_recognition(
     frame: 'np.ndarray',
     student_vectors: List[Tuple[StudentEmbedding, 'np.ndarray']],
 ) -> Tuple[int, List[Dict]]:
     """
-    Use YOLO for detection, InsightFace for embedding extraction.
+    Use YOLO for detection, InsightFace or DeepFace for embedding extraction.
     """
     detector = _yolo_detector
-    analyzer = _face_analyzer
+    insightface_app = _face_analyzer
 
-    if detector is None or analyzer is None:
+    if detector is None:
         return 0, []
 
     yolo_results = detector.predict(
@@ -389,6 +432,9 @@ def _recognize_yolo_plus_insightface(
     frame_h, frame_w = frame.shape[:2]
     matches = []
 
+    # Collect all face-to-student candidate scores first
+    candidate_scores: List[Tuple[int, StudentEmbedding, float, float, Dict]] = []
+
     for index in range(box_count):
         xyxy = boxes.xyxy[index]
         x1, y1, x2, y2 = _clip_bbox(xyxy, frame_w, frame_h)
@@ -401,18 +447,22 @@ def _recognize_yolo_plus_insightface(
         cy1 = max(0, y1 - pad_y)
         cx2 = min(frame_w, x2 + pad_x)
         cy2 = min(frame_h, y2 + pad_y)
-
         crop = frame[cy1:cy2, cx1:cx2]
         if crop.size == 0:
             continue
 
-        face_candidates = analyzer.get(crop, max_num=1)
-        if not face_candidates:
-            continue
+        face_embedding = None
+        if insightface_app:
+            # InsightFace (ArcFace 512-d)
+            faces = insightface_app.get(crop, max_num=1)
+            if faces:
+                best_face = max(faces, key=lambda f: float(getattr(f, 'det_score', 0.0)))
+                face_embedding = np.asarray(best_face.embedding, dtype=np.float32)
+        elif DEEPFACE_AVAILABLE:
+            # DeepFace (FaceNet 128-d)
+            face_embedding = _recognize_deepface(crop)
 
-        best_face = max(face_candidates, key=lambda f: float(getattr(f, 'det_score', 0.0)))
-        face_embedding = np.asarray(best_face.embedding, dtype=np.float32)
-        if face_embedding.size == 0:
+        if face_embedding is None or face_embedding.size == 0:
             continue
 
         best_student: Optional[StudentEmbedding] = None
@@ -423,8 +473,18 @@ def _recognize_yolo_plus_insightface(
                 best_similarity = similarity
                 best_student = student
 
-        if best_student is None or best_similarity < SIMILARITY_THRESHOLD:
+        if best_student is not None and best_similarity >= SIMILARITY_THRESHOLD:
+            bbox_dict = {'x1': x1, 'y1': y1, 'x2': x2, 'y2': y2}
+            candidate_scores.append((index, best_student, best_similarity, confidence, bbox_dict))
+
+    # Exclusive matching: sort by similarity descending, each student matched at most once
+    candidate_scores.sort(key=lambda x: x[2], reverse=True)
+    matched_student_ids: set = set()
+
+    for index, best_student, best_similarity, confidence, bbox_dict in candidate_scores:
+        if best_student.id in matched_student_ids:
             continue
+        matched_student_ids.add(best_student.id)
 
         matches.append({
             'student_id': best_student.id,
@@ -432,7 +492,7 @@ def _recognize_yolo_plus_insightface(
             'roll_number': best_student.roll_number,
             'similarity': round(best_similarity, 4),
             'confidence': round(max(0.0, min(1.0, best_similarity)) * 100, 2),
-            'bbox': {'x1': x1, 'y1': y1, 'x2': x2, 'y2': y2},
+            'bbox': bbox_dict,
             'detector_confidence': round(confidence, 4),
         })
 
@@ -480,7 +540,8 @@ def health() -> dict:
         'insightface_available': INSIGHTFACE_AVAILABLE,
         'insightface_version': INSIGHTFACE_VERSION,
         'insightface_import_error': INSIGHTFACE_IMPORT_ERROR,
-        'embedding_backend': 'insightface' if INSIGHTFACE_AVAILABLE else 'unavailable',
+        'deepface_available': DEEPFACE_AVAILABLE,
+        'embedding_backend': 'deepface' if DEEPFACE_AVAILABLE else ('insightface' if _face_analyzer else 'unavailable'),
         'similarity_threshold': SIMILARITY_THRESHOLD,
         'yolo_conf_threshold': YOLO_CONF_THRESHOLD,
         'det_size': DET_SIZE,
@@ -502,6 +563,10 @@ def recognize(req: RecognizeRequest) -> dict:
         vec = np.asarray(student.embedding, dtype=np.float32)
         if vec.size == 0:
             continue
+        # L2-normalize student vectors for consistent cosine similarity
+        norm = float(np.linalg.norm(vec))
+        if norm > 0:
+            vec = vec / norm
         student_vectors.append((student, vec))
 
     # Collect frames
@@ -516,8 +581,8 @@ def recognize(req: RecognizeRequest) -> dict:
 
     # Choose recognition pipeline based on detection mode
     recognize_fn = (
-        _recognize_yolo_plus_insightface
-        if _detection_mode == 'yolo+insightface'
+        _recognize_yolo_plus_recognition
+        if _detection_mode == 'yolo+recognition'
         else _recognize_insightface_only
     )
 

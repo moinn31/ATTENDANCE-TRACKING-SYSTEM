@@ -63,13 +63,17 @@ type DashboardShellProps = {
   headerActions?: React.ReactNode
 }
 
+import { useAuth } from '@/hooks/use-auth'
+
 export function DashboardShell({ title, subtitle, children, headerActions }: DashboardShellProps) {
+  const { user, logout, loading } = useAuth()
   const pathname = usePathname()
   const router = useRouter()
+  
   const profile = {
-    name: 'Admin',
+    name: user?.name || 'Admin',
     subTitle: 'Faculty',
-    imageUrl: 'https://i.pravatar.cc/100?img=12',
+    imageUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.name || 'Admin')}&background=random`,
   }
 
   // --- Search State ---
@@ -150,10 +154,9 @@ export function DashboardShell({ title, subtitle, children, headerActions }: Das
   const [profileOpen, setProfileOpen] = useState(false)
   const profileRef = useRef<HTMLDivElement>(null)
 
-  const handleLogout = useCallback(() => {
-    window.localStorage.removeItem('token')
-    router.replace('/auth/login')
-  }, [router])
+  const handleLogout = useCallback(async () => {
+    await logout();
+  }, [logout])
 
   // Close profile on outside click
   useEffect(() => {
@@ -180,13 +183,18 @@ export function DashboardShell({ title, subtitle, children, headerActions }: Das
     return `${parts[0][0] ?? ''}${parts[1][0] ?? ''}`.toUpperCase() || 'AD'
   }, [profile.name])
 
-  useEffect(() => {
-    const token = window.localStorage.getItem('token')
-    if (!token) {
-      window.localStorage.removeItem('token') // Ensure it's totally gone
-      router.replace('/auth/login')
-    }
-  }, [router])
+  if (loading) {
+    return (
+      <div className="flex h-screen w-full items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-4">
+          <Activity className="size-10 animate-spin text-[#2b5c9e]" />
+          <p className="text-lg font-medium text-muted-foreground animate-pulse">
+            Loading System...
+          </p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <SidebarProvider defaultOpen>
@@ -257,8 +265,8 @@ export function DashboardShell({ title, subtitle, children, headerActions }: Das
             <p className="text-xs font-medium text-white/70">Current session</p>
             <div className="mt-2 flex items-center justify-between gap-3">
               <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-white">Teacher account</p>
-                <p className="truncate text-xs text-white/70">Face recognition enabled</p>
+                <p className="truncate text-sm font-semibold text-white">{user?.name || 'User account'}</p>
+                <p className="truncate text-xs text-white/70">{user?.email || 'Authenticated'}</p>
               </div>
               <Badge className="border-white/15 bg-white/10 text-white hover:bg-white/15">Online</Badge>
             </div>

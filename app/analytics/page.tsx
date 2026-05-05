@@ -9,7 +9,6 @@ import {
   Download, RefreshCcw, Users, CheckCircle2, XCircle,
   TrendingUp, Activity, BarChart3
 } from 'lucide-react'
-import * as XLSX from 'xlsx'
 import {
   BarChart,
   Bar,
@@ -23,6 +22,7 @@ import {
   Pie,
   Cell,
 } from 'recharts'
+import { useAuth } from '@/hooks/use-auth'
 
 interface ReportsData {
   overview: {
@@ -61,6 +61,7 @@ interface ReportsData {
 const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444']
 
 export default function AnalyticsPage() {
+  const { user, loading: authLoading } = useAuth()
   const router = useRouter()
   const [data, setData] = useState<ReportsData | null>(null)
   const [loading, setLoading] = useState(true)
@@ -68,14 +69,12 @@ export default function AnalyticsPage() {
 
   const fetchReports = useCallback(async () => {
     try {
-      const token = window.localStorage.getItem('token')
-      if (!token) { router.replace('/auth/login'); return }
+      const res = await fetch('/api/reports')
 
-      const res = await fetch('/api/reports', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      })
-
-      if (res.status === 401) { router.replace('/auth/login'); return }
+      if (res.status === 401) {
+        router.replace('/auth/login')
+        return
+      }
 
       if (res.ok) {
         const result = await res.json()
@@ -90,13 +89,17 @@ export default function AnalyticsPage() {
   }, [router])
 
   useEffect(() => {
-    fetchReports()
-    const interval = setInterval(fetchReports, 30000) // refresh every 30s
-    return () => clearInterval(interval)
-  }, [fetchReports])
+    if (!authLoading) {
+      fetchReports()
+      const interval = setInterval(fetchReports, 30000) // refresh every 30s
+      return () => clearInterval(interval)
+    }
+  }, [fetchReports, authLoading])
 
-  const exportToExcel = () => {
+  const exportToExcel = async () => {
     if (!data) return
+
+    const XLSX = await import('xlsx')
 
     // Summary sheet
     const summarySheet = XLSX.utils.aoa_to_sheet([

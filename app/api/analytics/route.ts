@@ -1,5 +1,5 @@
-import pool from '@/lib/db.js'
-import { verifyToken } from '@/lib/auth.js'
+import pool from '@/lib/db'
+import { verifyToken } from '@/lib/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
 export async function GET(request: NextRequest) {
@@ -136,11 +136,11 @@ async function generateStudentAnalytics(studentId: string, startDate?: string, e
   )
 
   const totalClasses = rows.length
-  const attended = rows.filter((row) => row.status === 'present').length
-  const absent = rows.filter((row) => row.status === 'absent').length
-  const late = rows.filter((row) => row.status === 'late').length
+  const attended = rows.filter((row: any) => row.status === 'present').length
+  const absent = rows.filter((row: any) => row.status === 'absent').length
+  const late = rows.filter((row: any) => row.status === 'late').length
   const avgConfidence = rows.length
-    ? rows.reduce((sum, row) => sum + (Number(row.detected_confidence) || 0), 0) / rows.length
+    ? rows.reduce((sum: number, row: any) => sum + (Number(row.detected_confidence) || 0), 0) / rows.length
     : 0
 
   return {

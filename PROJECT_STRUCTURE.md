@@ -72,8 +72,9 @@ This project has been cleaned up and organized for clarity and maintainability.
 │   │       └── ... (40+ components)
 │   │
 │   ├── lib/                         # Utilities & Helpers
-│   │   ├── db.js                    # PostgreSQL connection pool
-│   │   ├── auth.js                  # JWT verification utility
+│   │   ├── db.ts                    # PostgreSQL connection pool
+│   │   ├── hadoop.ts                # Hadoop HDFS integration
+│   │   ├── auth.ts                  # JWT verification utility
 │   │   ├── utils.ts                 # General utilities
 │   │   └── supabase/                # (Legacy - being phased out)
 │   │
@@ -183,8 +184,9 @@ cp .env.example .env.local
 
 | File | Purpose |
 |------|---------|
-| `lib/db.js` | PostgreSQL connection & pooling |
-| `lib/auth.js` | JWT token verification |
+| `lib/db.ts` | PostgreSQL connection & pooling |
+| `lib/hadoop.ts` | Hadoop HDFS connector |
+| `lib/auth.ts` | JWT token verification |
 | `app/api/auth/` | Registration & login endpoints |
 | `components/dashboard-shell.tsx` | Main navigation & layout |
 | `app/scanner/page.tsx` | Face detection & attendance |

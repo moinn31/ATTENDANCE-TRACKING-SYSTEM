@@ -3,6 +3,9 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  experimental: {
+    optimizePackageImports: ['lucide-react', 'recharts', 'xlsx'],
+  },
   images: {
     unoptimized: true,
   },

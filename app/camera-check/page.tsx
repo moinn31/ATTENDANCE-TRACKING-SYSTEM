@@ -82,7 +82,7 @@ export default function CameraCheckPage() {
   }
 
   return (
-    <DashboardShell>
+    <DashboardShell title="Camera Check" subtitle="Verify camera support and permissions">
       <div className="container mx-auto px-4 py-8 max-w-2xl">
         <div className="flex items-center gap-3 mb-6">
           <Camera className="w-8 h-8" />
