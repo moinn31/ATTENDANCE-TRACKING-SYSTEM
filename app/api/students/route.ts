@@ -72,7 +72,7 @@ const normalizeEmbeddingVector = (rawValue: unknown): number[] | null => {
 
 export async function GET(request: NextRequest) {
   try {
-    verifyToken(request)
+    await verifyToken(request)
 
     const { searchParams } = new URL(request.url)
     const includeEmbeddings = searchParams.get('includeEmbeddings') === 'true'
@@ -124,7 +124,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    verifyToken(request)
+    await verifyToken(request)
 
     const body = await request.json()
     const name = typeof body?.name === 'string' ? body.name.trim() : ''

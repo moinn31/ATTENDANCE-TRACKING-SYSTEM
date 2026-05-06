@@ -10,7 +10,7 @@ const getLocalDate = () => {
 
 export async function GET(request: NextRequest) {
   try {
-    verifyToken(request)
+    await verifyToken(request)
 
     const today = getLocalDate()
 

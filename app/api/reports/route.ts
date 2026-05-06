@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 export async function GET(req: NextRequest) {
   try {
-    verifyToken(req)
+    await verifyToken(req)
 
     // Run all queries in parallel for speed
     const [

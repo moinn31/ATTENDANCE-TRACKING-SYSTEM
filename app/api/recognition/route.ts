@@ -3,7 +3,7 @@ import { verifyToken } from '@/lib/auth'
 
 export async function POST(request: NextRequest) {
   try {
-    verifyToken(request)
+    await verifyToken(request)
 
     const serviceUrl = process.env.FACE_RECOGNITION_SERVICE_URL
 

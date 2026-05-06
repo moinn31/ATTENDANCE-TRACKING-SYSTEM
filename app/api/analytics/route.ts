@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 export async function GET(request: NextRequest) {
   try {
-    verifyToken(request)
+    await verifyToken(request)
 
     const { searchParams } = new URL(request.url)
     const type = searchParams.get('type') || 'daily'
@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    verifyToken(request)
+    await verifyToken(request)
 
     const body = await request.json()
     const { student_id, start_date, end_date } = body

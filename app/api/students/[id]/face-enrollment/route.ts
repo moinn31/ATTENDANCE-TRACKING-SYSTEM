@@ -8,7 +8,7 @@ interface RouteContext {
 
 export async function POST(request: NextRequest, context: RouteContext) {
   try {
-    verifyToken(request)
+    await verifyToken(request)
 
     const { id: studentId } = await context.params
     const body = await request.json()

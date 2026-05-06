@@ -85,7 +85,7 @@ function computeBayesianPosterior(
 
 export async function GET(request: NextRequest) {
   try {
-    verifyToken(request)
+    await verifyToken(request)
 
     const { searchParams } = new URL(request.url)
     const type = searchParams.get('type') || 'overview'
@@ -260,7 +260,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    verifyToken(request)
+    await verifyToken(request)
 
     const body = await request.json()
     const { action, confidence, frameCount, historicalRate } = body

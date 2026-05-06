@@ -25,7 +25,7 @@ const getLocalDate = () => {
 
 export async function GET(request: NextRequest) {
   try {
-    verifyToken(request)
+    await verifyToken(request)
 
     const { searchParams } = new URL(request.url)
     const date = searchParams.get('date') || getLocalDate()
@@ -93,7 +93,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    verifyToken(request)
+    await verifyToken(request)
 
     const body = await request.json()
     const { student_id, status, confidence, date, class_name, subject_name } = body
@@ -214,7 +214,7 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
-    verifyToken(request)
+    await verifyToken(request)
 
     const body = await request.json().catch(() => ({}))
     const all = Boolean(body?.all)

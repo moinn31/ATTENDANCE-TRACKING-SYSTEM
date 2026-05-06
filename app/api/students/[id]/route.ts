@@ -8,7 +8,7 @@ interface RouteContext {
 
 export async function DELETE(request: NextRequest, context: RouteContext) {
   try {
-    verifyToken(request)
+    await verifyToken(request)
 
     const { id } = await context.params
 
