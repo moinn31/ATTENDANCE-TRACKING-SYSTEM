@@ -3,7 +3,7 @@ frontend:
   phases:
     preBuild:
       commands:
-        - rm -rf node_modules || true
+        - rm -rf node_modules package-lock.json || true
         - npm install --include=optional --no-audit --no-fund
         - npm install --no-save lightningcss-linux-x64-gnu@1.31.1 --include=optional
         - npm install --no-save @tailwindcss/oxide-linux-x64-gnu@4.2.1 --include=optional --legacy-peer-deps --no-audit --no-fund
@@ -22,6 +22,3 @@ frontend:
     baseDirectory: .next
     files:
       - '**/*'
-  cache:
-    paths:
-      - node_modules/**/*
