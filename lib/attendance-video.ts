@@ -5,14 +5,14 @@ import * as faceapi from 'face-api.js'
 export type EnrolledFace = {
   id: string
   name: string
-  roll_number?: string | null
+  enrollment_number?: string | null
   descriptor: Float32Array
 }
 
 export type VideoRecognitionMatch = {
   studentId: string
   name: string
-  roll_number: string | null
+  enrollment_number: string | null
   confidence: number
   frameCount: number
   bestFrameIndex: number
@@ -29,8 +29,7 @@ export type VideoFramePreview = {
 type FrameCandidate = {
   descriptor: Float32Array
   confidence: number
-  boxRatio: number
-  blurScore: number
+  boxArea: number
   frameIndex: number
 }
 
@@ -52,18 +51,19 @@ const DEFAULT_OPTIONS: Required<Omit<VideoRecognitionOptions, 'onStatus' | 'onPr
   targetFps: 30,
   durationHintSeconds: 0,
   frameStride: 1,
-  minDetectionScore: 0.40, // More lenient detection
-  minBoxRatio: 0.001,      // More lenient for small/far faces
+  minDetectionScore: 0.40,
+  minBoxRatio: 0.001,
   duplicateSimilarityThreshold: 0.95,
-  minBlurScore: 0.1,       // Much more lenient for video frames
+  minBlurScore: 0.1,
   detectorType: 'ssd', 
 }
+
+const MIN_FACE_AREA = 8000
 
 const cosineSimilarity = (left: Float32Array, right: Float32Array) => {
   let dot = 0
   let leftNorm = 0
   let rightNorm = 0
-
   const length = Math.min(left.length, right.length)
   for (let index = 0; index < length; index += 1) {
     const leftValue = left[index] ?? 0
@@ -72,31 +72,18 @@ const cosineSimilarity = (left: Float32Array, right: Float32Array) => {
     leftNorm += leftValue * leftValue
     rightNorm += rightValue * rightValue
   }
-
-  if (leftNorm === 0 || rightNorm === 0) {
-    return 0
-  }
-
+  if (leftNorm === 0 || rightNorm === 0) return 0
   return dot / (Math.sqrt(leftNorm) * Math.sqrt(rightNorm))
 }
 
 const waitForEvent = (target: HTMLVideoElement, eventName: 'loadedmetadata' | 'seeked' | 'ended') => {
   return new Promise<void>((resolve, reject) => {
-    const handleResolve = () => {
-      cleanup()
-      resolve()
-    }
-
-    const handleError = () => {
-      cleanup()
-      reject(new Error(`Video failed while waiting for ${eventName}`))
-    }
-
+    const handleResolve = () => { cleanup(); resolve(); }
+    const handleError = () => { cleanup(); reject(new Error(`Video failed while waiting for ${eventName}`)); }
     const cleanup = () => {
       target.removeEventListener(eventName, handleResolve)
       target.removeEventListener('error', handleError)
     }
-
     target.addEventListener(eventName, handleResolve, { once: true })
     target.addEventListener('error', handleError, { once: true })
   })
@@ -110,88 +97,29 @@ const createVideoElementFromBlob = async (blob: Blob) => {
   video.playsInline = true
   video.preload = 'auto'
   video.crossOrigin = 'anonymous'
-
   await waitForEvent(video, 'loadedmetadata')
   video.pause()
-
-  return {
-    video,
-    objectUrl,
-  }
+  return { video, objectUrl }
 }
 
 const seekVideo = async (video: HTMLVideoElement, timeSeconds: number) => {
   const safeTime = Math.max(0, Math.min(timeSeconds, Math.max(0, video.duration - 0.05)))
-  if (Math.abs(video.currentTime - safeTime) < 0.02) {
-    return
-  }
-
+  if (Math.abs(video.currentTime - safeTime) < 0.02) return
   await new Promise<void>((resolve, reject) => {
-    const onSeeked = () => {
-      cleanup()
-      resolve()
-    }
-
-    const onError = () => {
-      cleanup()
-      reject(new Error('Unable to seek recorded video'))
-    }
-
+    const onSeeked = () => { cleanup(); resolve(); }
+    const onError = () => { cleanup(); reject(new Error('Unable to seek recorded video')); }
     const cleanup = () => {
       video.removeEventListener('seeked', onSeeked)
       video.removeEventListener('error', onError)
     }
-
     video.addEventListener('seeked', onSeeked, { once: true })
     video.addEventListener('error', onError, { once: true })
     video.currentTime = safeTime
   })
 }
 
-const estimateBlurScore = (canvas: HTMLCanvasElement, box: faceapi.Box) => {
-  const cropCanvas = document.createElement('canvas')
-  const cropSize = 24
-  cropCanvas.width = cropSize
-  cropCanvas.height = cropSize
-
-  const context = cropCanvas.getContext('2d', { willReadFrequently: true })
-  if (!context) {
-    return 0
-  }
-
-  const safeX = Math.max(0, box.x)
-  const safeY = Math.max(0, box.y)
-  const safeWidth = Math.max(1, Math.min(box.width, canvas.width - safeX))
-  const safeHeight = Math.max(1, Math.min(box.height, canvas.height - safeY))
-
-  context.drawImage(canvas, safeX, safeY, safeWidth, safeHeight, 0, 0, cropSize, cropSize)
-  const imageData = context.getImageData(0, 0, cropSize, cropSize).data
-
-  let sum = 0
-  let sumSquared = 0
-  let count = 0
-
-  for (let index = 0; index < imageData.length; index += 16) {
-    const red = imageData[index] ?? 0
-    const green = imageData[index + 1] ?? 0
-    const blue = imageData[index + 2] ?? 0
-    const grayscale = 0.299 * red + 0.587 * green + 0.114 * blue
-    sum += grayscale
-    sumSquared += grayscale * grayscale
-    count += 1
-  }
-
-  if (count === 0) {
-    return 0
-  }
-
-  const mean = sum / count
-  return Math.max(0, sumSquared / count - mean * mean)
-}
-
 const calculateCandidateScore = (candidate: FrameCandidate) => {
-  const normalizedBlur = Math.min(candidate.blurScore, 120) / 120
-  return candidate.confidence * 0.55 + candidate.boxRatio * 100 * 0.25 + normalizedBlur * 100 * 0.2
+  return candidate.confidence * 0.7 + (candidate.boxArea / 100000) * 0.3
 }
 
 const toPositiveFinite = (value: unknown) => {
@@ -216,52 +144,20 @@ const processFrameCanvas = async (
     .withFaceLandmarks()
     .withFaceDescriptors()
 
-  console.log(`[attendance-video] Frame ${frameIndex}: Detected ${detections.length} face(s) using ${mergedOptions.detectorType} with scoreThreshold ${mergedOptions.minDetectionScore}`)
-
-  if (detections.length === 0) {
-    return
-  }
-
-  const ctx = canvas.getContext('2d', { willReadFrequently: true })
+  if (detections.length === 0) return
 
   for (const detection of detections) {
     const detectionScore = detection.detection.score
     const box = detection.detection.box
-    const boxRatio = (box.width * box.height) / (canvas.width * canvas.height)
+    const faceArea = Math.round(box.width * box.height)
 
-    // Drawing debug info on canvas if context exists
-    if (ctx) {
-      ctx.strokeStyle = '#00ff00'
-      ctx.lineWidth = 3
-      ctx.strokeRect(box.x, box.y, box.width, box.height)
-      ctx.fillStyle = '#00ff00'
-      ctx.font = '16px monospace'
-      ctx.fillText(`Score: ${detectionScore.toFixed(2)}`, box.x, box.y > 20 ? box.y - 5 : box.y + 20)
-    }
-
-    console.log(`[attendance-video] Face detected - Score: ${detectionScore.toFixed(4)}, BoxRatio: ${boxRatio.toFixed(4)}, Descriptor length: ${detection.descriptor.length}`)
-
-    if (detectionScore < mergedOptions.minDetectionScore) {
-      console.log(`[attendance-video] Face rejected: score ${detectionScore.toFixed(4)} < min ${mergedOptions.minDetectionScore}`)
-      continue
-    }
-
-    if (boxRatio < mergedOptions.minBoxRatio) {
-      console.log(`[attendance-video] Face rejected: boxRatio ${boxRatio.toFixed(4)} < min ${mergedOptions.minBoxRatio}`)
-      continue
-    }
-
-    const blurScore = estimateBlurScore(canvas, box)
-    if (blurScore < mergedOptions.minBlurScore) {
-      console.log(`[attendance-video] Face rejected: blurScore ${blurScore.toFixed(4)} < min ${mergedOptions.minBlurScore}`)
-      continue
-    }
+    if (faceArea < MIN_FACE_AREA) continue
+    if (detectionScore < mergedOptions.minDetectionScore) continue
 
     const candidate: FrameCandidate = {
       descriptor: detection.descriptor,
       confidence: detectionScore,
-      boxRatio,
-      blurScore,
+      boxArea: faceArea,
       frameIndex,
     }
 
@@ -271,12 +167,11 @@ const processFrameCanvas = async (
 
     if (existingIndex === -1) {
       uniqueCandidates.push(candidate)
-      continue
-    }
-
-    const currentCandidate = uniqueCandidates[existingIndex]
-    if (calculateCandidateScore(candidate) > calculateCandidateScore(currentCandidate)) {
-      uniqueCandidates[existingIndex] = candidate
+    } else {
+      const currentCandidate = uniqueCandidates[existingIndex]
+      if (calculateCandidateScore(candidate) > calculateCandidateScore(currentCandidate)) {
+        uniqueCandidates[existingIndex] = candidate
+      }
     }
   }
 }
@@ -295,91 +190,52 @@ const analyzeWithFrameCallbacks = async (
     requestVideoFrameCallback?: (callback: VideoFrameRequestCallback) => number
   }).requestVideoFrameCallback
 
-  if (typeof frameCallback !== 'function') {
-    return false
-  }
+  if (typeof frameCallback !== 'function') return false
 
   await video.play()
   let callbackFrameIndex = 0
   let processedFrames = 0
-  const knownDuration = toPositiveFinite(video.duration)
-  const hintedDuration = toPositiveFinite(mergedOptions.durationHintSeconds)
-  const estimatedDuration = Math.max(knownDuration, hintedDuration)
+  const estimatedDuration = Math.max(toPositiveFinite(video.duration), toPositiveFinite(mergedOptions.durationHintSeconds))
   const frameStride = Math.max(1, mergedOptions.frameStride)
-  const estimatedRawFrames = Math.max(1, Math.ceil(estimatedDuration * mergedOptions.targetFps))
-  const estimatedTotalFrames = Math.max(1, Math.ceil(estimatedRawFrames / frameStride))
-  const knownEndTime = knownDuration > 0 ? Math.max(0, knownDuration - 0.01) : Number.POSITIVE_INFINITY
+  const estimatedTotalFrames = Math.max(1, Math.ceil((estimatedDuration * mergedOptions.targetFps) / frameStride))
+  const knownEndTime = video.duration > 0 ? Math.max(0, video.duration - 0.01) : Number.POSITIVE_INFINITY
 
   await new Promise<void>((resolve, reject) => {
     let isResolved = false
     const safeResolve = () => {
       if (!isResolved) {
         isResolved = true
-        video.onended = null
-        video.onerror = null
-        console.log('[analyzeWithFrameCallbacks] Loop resolved via onended or boundary check.')
+        video.onended = null; video.onerror = null;
         resolve()
       }
     }
-
     video.onended = safeResolve
-    video.onerror = (e) => {
-      if (!isResolved) {
-        isResolved = true
-        reject(e)
-      }
-    }
+    video.onerror = (e) => { if (!isResolved) { isResolved = true; reject(e); } }
 
     const scheduleNext = () => {
       if (isResolved) return
-
       frameCallback.call(video, async (_now, metadata) => {
         try {
-          if (video.ended || metadata.mediaTime >= knownEndTime) {
-            safeResolve()
-            return
-          }
-
+          if (video.ended || metadata.mediaTime >= knownEndTime) { safeResolve(); return; }
           if (video.videoWidth > 0 && video.videoHeight > 0 && callbackFrameIndex % frameStride === 0) {
-            canvas.width = video.videoWidth
-            canvas.height = video.videoHeight
+            canvas.width = video.videoWidth; canvas.height = video.videoHeight;
             const context = canvas.getContext('2d', { willReadFrequently: true })
             if (context) {
               context.drawImage(video, 0, 0, canvas.width, canvas.height)
-              await processFrameCanvas(
-                canvas,
-                callbackFrameIndex,
-                enrolledStudents,
-                faceMatcher,
-                mergedOptions,
-                uniqueCandidates,
-              )
+              await processFrameCanvas(canvas, callbackFrameIndex, enrolledStudents, faceMatcher, mergedOptions, uniqueCandidates)
               processedFrames += 1
-              const dynamicTotalFrames = Math.max(estimatedTotalFrames, processedFrames)
-              const progress = Math.min(100, Math.round((processedFrames / dynamicTotalFrames) * 100))
-              onProgress?.(progress, processedFrames, dynamicTotalFrames)
-              onFramePreview?.({
-                canvas,
-                frameIndex: callbackFrameIndex,
-                processedFrames,
-                totalFrames: dynamicTotalFrames,
-                timeSeconds: metadata.mediaTime,
-              })
+              const progress = Math.min(100, Math.round((processedFrames / Math.max(estimatedTotalFrames, processedFrames)) * 100))
+              onProgress?.(progress, processedFrames, Math.max(estimatedTotalFrames, processedFrames))
+              onFramePreview?.({ canvas, frameIndex: callbackFrameIndex, processedFrames, totalFrames: Math.max(estimatedTotalFrames, processedFrames), timeSeconds: metadata.mediaTime })
             }
           }
-
           callbackFrameIndex += 1
-
           scheduleNext()
-        } catch (error) {
-          reject(error)
-        }
+        } catch (error) { reject(error) }
       })
     }
-
     scheduleNext()
   })
-
   return true
 }
 
@@ -400,37 +256,19 @@ const analyzeWithSeekFallback = async (
   const totalFrames = Math.max(1, Math.ceil(rawFrameCount / frameStride))
 
   let processedFrames = 0
-  for (let frameIndex = 0; frameIndex < rawFrameCount; frameIndex += 1) {
-    if (frameIndex % frameStride !== 0) {
-      continue
-    }
-
+  for (let frameIndex = 0; frameIndex < rawFrameCount; frameIndex += frameStride) {
     const sampleTime = Math.min(duration, (frameIndex * targetFrameIntervalMs) / 1000)
     await seekVideo(video, sampleTime)
-
-    if (video.videoWidth === 0 || video.videoHeight === 0) {
-      continue
-    }
-
-    canvas.width = video.videoWidth
-    canvas.height = video.videoHeight
+    if (video.videoWidth === 0 || video.videoHeight === 0) continue
+    canvas.width = video.videoWidth; canvas.height = video.videoHeight;
     const context = canvas.getContext('2d')
-    if (!context) {
-      continue
-    }
-
+    if (!context) continue
     context.drawImage(video, 0, 0, canvas.width, canvas.height)
     await processFrameCanvas(canvas, frameIndex, enrolledStudents, faceMatcher, mergedOptions, uniqueCandidates)
     processedFrames += 1
     const progress = Math.min(100, Math.round((processedFrames / totalFrames) * 100))
     onProgress?.(progress, processedFrames, totalFrames)
-    onFramePreview?.({
-      canvas,
-      frameIndex,
-      processedFrames,
-      totalFrames,
-      timeSeconds: sampleTime,
-    })
+    onFramePreview?.({ canvas, frameIndex, processedFrames, totalFrames, timeSeconds: sampleTime })
   }
 }
 
@@ -439,140 +277,68 @@ export async function analyzeAttendanceVideo(
   enrolledStudents: EnrolledFace[],
   options: VideoRecognitionOptions = {},
 ): Promise<VideoRecognitionMatch[]> {
-  const mergedOptions = {
-    ...DEFAULT_OPTIONS,
-    ...options,
-  }
-
+  const mergedOptions = { ...DEFAULT_OPTIONS, ...options }
   const { video, objectUrl } = await createVideoElementFromBlob(blob)
   const hiddenCanvas = document.createElement('canvas')
 
   try {
     const labeledDescriptors = enrolledStudents
-      .filter((student) => {
-        if (student.descriptor.length !== 128) {
-          console.warn(`[analyzeAttendanceVideo] Skipping student ${student.name} (${student.id}): descriptor dimension is ${student.descriptor.length}, but 128 is required for face-api.js`)
-          return false
-        }
-        return true
-      })
-      .map(
-        (student) => new faceapi.LabeledFaceDescriptors(student.id, [student.descriptor]),
-      )
-
-    console.log(`[analyzeAttendanceVideo] Created ${labeledDescriptors.length} labeled descriptors from ${enrolledStudents.length} students.`)
+      .filter((student) => student.descriptor.length === 128)
+      .map((student) => new faceapi.LabeledFaceDescriptors(student.id, [student.descriptor]))
 
     if (labeledDescriptors.length === 0) {
-      options.onStatus?.('No compatible (128-d) face embeddings found. Please re-enroll student faces.')
+      options.onStatus?.('No compatible (128-d) face embeddings found.')
       return []
     }
 
     const faceMatcher = new faceapi.FaceMatcher(labeledDescriptors, 0.75)
-
     const uniqueCandidates: FrameCandidate[] = []
+    options.onStatus?.('Analyzing recorded video frame by frame...')
 
-    options.onStatus?.('Analyzing recorded video frame by frame at native frame rate...')
-
-    const usedFrameCallbacks = await analyzeWithFrameCallbacks(
-      video,
-      hiddenCanvas,
-      enrolledStudents,
-      faceMatcher,
-      mergedOptions,
-      uniqueCandidates,
-      options.onProgress,
-      options.onFramePreview,
-    )
+    const usedFrameCallbacks = await analyzeWithFrameCallbacks(video, hiddenCanvas, enrolledStudents, faceMatcher, mergedOptions, uniqueCandidates, options.onProgress, options.onFramePreview)
 
     if (!usedFrameCallbacks) {
-      options.onStatus?.(`Video callback unavailable, falling back to ${mergedOptions.targetFps}fps frame extraction...`)
-      await analyzeWithSeekFallback(
-        video,
-        hiddenCanvas,
-        enrolledStudents,
-        faceMatcher,
-        mergedOptions,
-        uniqueCandidates,
-        options.onProgress,
-        options.onFramePreview,
-      )
+      options.onStatus?.('Falling back to frame extraction...')
+      await analyzeWithSeekFallback(video, hiddenCanvas, enrolledStudents, faceMatcher, mergedOptions, uniqueCandidates, options.onProgress, options.onFramePreview)
     }
     
-    console.log(`[analyzeAttendanceVideo] Finished frame tracing. Unique candidates: ${uniqueCandidates.length}`)
-    options.onStatus?.(`Recognition step: Matching ${uniqueCandidates.length} face(s) against roster...`)
-
     const recognized = new Map<string, VideoRecognitionMatch>()
-
-    console.log(`[analyzeAttendanceVideo] Post-analysis: Processing ${uniqueCandidates.length} unique candidates. Labeled descriptors: ${labeledDescriptors.length}`)
-    
-    uniqueCandidates.forEach((candidate, idx) => {
-      console.log(`[analyzeAttendanceVideo] Evaluating candidate ${idx}...`)
-      if (idx === 0) {
-        console.log(`[analyzeAttendanceVideo] First candidate descriptor - Length: ${candidate.descriptor.length}, Sample: [${candidate.descriptor.slice(0, 3).join(', ')}]`)
-      }
-
-      if (candidate.descriptor.length !== 128) {
-        console.warn(`[analyzeAttendanceVideo] Skipping candidate ${idx}: dimension ${candidate.descriptor.length} != 128`)
-        return
-      }
-
+    uniqueCandidates.forEach((candidate) => {
+      if (candidate.descriptor.length !== 128) return
       const bestMatch = faceMatcher.findBestMatch(candidate.descriptor)
-      console.log(`[analyzeAttendanceVideo] Candidate ${idx} best match: ${bestMatch.toString()} (Dist: ${bestMatch.distance.toFixed(4)})`)
-      
-      if (bestMatch.label === 'unknown') {
-        const closest = enrolledStudents.map(s => ({
-          name: s.name,
-          dist: faceapi.euclideanDistance(candidate.descriptor, s.descriptor)
-        })).sort((a, b) => a.dist - b.dist)[0]
-        
-        if (closest) {
-          console.log(`[analyzeAttendanceVideo] Nearest student for candidate ${idx}: ${closest.name} (Dist: ${closest.dist.toFixed(4)})`)
-        }
-        return
-      }
-
+      if (bestMatch.label === 'unknown') return
       const student = enrolledStudents.find((item) => item.id === bestMatch.label)
-      if (!student) {
-        return
-      }
+      if (!student) return
 
-      // Map Euclidean distance [0, 1] → confidence [100, 0] linearly
       const confidence = Math.max(0, Math.min(100, Math.round((1 - bestMatch.distance) * 100)))
       const existing = recognized.get(student.id)
-
       if (!existing) {
         recognized.set(student.id, {
           studentId: student.id,
           name: student.name,
-          roll_number: student.roll_number ?? null,
+          enrollment_number: student.enrollment_number ?? null,
           confidence,
           frameCount: 1,
           bestFrameIndex: candidate.frameIndex,
         })
-        return
+      } else {
+        recognized.set(student.id, {
+          ...existing,
+          confidence: Math.max(existing.confidence, confidence),
+          frameCount: existing.frameCount + 1,
+          bestFrameIndex: Math.min(existing.bestFrameIndex, candidate.frameIndex),
+        })
       }
-
-      recognized.set(student.id, {
-        ...existing,
-        confidence: Math.max(existing.confidence, confidence),
-        frameCount: existing.frameCount + 1,
-        bestFrameIndex: Math.min(existing.bestFrameIndex, candidate.frameIndex),
-      })
     })
 
-    console.log(`[analyzeAttendanceVideo] Finalizing analysis. Unique candidates: ${uniqueCandidates.length}`)
-    // Multi-frame confirmation: 
-    // to prevent single-frame noise from creating false positives.
     const confirmed = Array.from(recognized.values())
       .filter((match) => match.frameCount >= 1)
       .sort((left, right) => right.confidence - left.confidence)
 
-    console.log(`[analyzeAttendanceVideo] Analysis complete. Recognized ${confirmed.length} student(s).`)
-    
     if (confirmed.length > 0) {
       options.onStatus?.(`Recognition success! Found ${confirmed.length} student(s).`)
     } else {
-      options.onStatus?.('No students recognized. Try checking lighting or re-enrolling.')
+      options.onStatus?.('No students recognized.')
     }
 
     return confirmed

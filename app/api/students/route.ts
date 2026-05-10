@@ -5,7 +5,7 @@ import { NextRequest, NextResponse } from 'next/server'
 type StudentRow = {
   id: string
   name: string
-  roll_number?: string | null
+  enrollment_number?: string | null
 }
 
 type FaceEmbeddingRow = {
@@ -79,20 +79,22 @@ export async function GET(request: NextRequest) {
 
     if (!includeEmbeddings) {
       // Fast path for Students page: count enrollments without fetching vectors
+      // Sort strictly by enrollment_number (roll_number) in ascending order
       const result = await (pool as any).query(`
         select 
-          s.id, s.name, s.roll_number,
+          s.id, s.name, s.roll_number as enrollment_number,
           exists(select 1 from public.face_embeddings f where f.student_id = s.id) as face_enrolled
         from public.students s
-        order by s.created_at desc
+        order by cast(s.roll_number as integer) asc
       `)
       return NextResponse.json({ data: result.rows })
     }
 
     // Fetches students joined with their latest embedding vector (if any)
+    // Sort strictly by enrollment_number (roll_number) in ascending order
     const result = await (pool as any).query(`
       select 
-        s.id, s.name, s.roll_number,
+        s.id, s.name, s.roll_number as enrollment_number,
         f.embedding_vector
       from public.students s
       left join (
@@ -100,13 +102,13 @@ export async function GET(request: NextRequest) {
         from public.face_embeddings
         order by student_id, created_at desc
       ) f on s.id = f.student_id
-      order by s.created_at desc
+      order by cast(s.roll_number as integer) asc
     `)
 
     const students = result.rows.map((row: any) => ({
       id: row.id,
       name: row.name,
-      roll_number: row.roll_number ?? null,
+      enrollment_number: row.enrollment_number ?? null,
       face_enrolled: Boolean(row.embedding_vector),
       embedding_vector: normalizeEmbeddingVector(row.embedding_vector),
     }))
@@ -128,26 +130,30 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json()
     const name = typeof body?.name === 'string' ? body.name.trim() : ''
-    const rollNumber = typeof body?.roll_number === 'string' ? body.roll_number.trim() : ''
+    const enrollmentNumber = typeof body?.enrollment_number === 'string' ? body.enrollment_number.trim() : ''
 
-    if (!name || !rollNumber) {
+    if (!name || !enrollmentNumber) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+    }
+
+    if (!/^\d+$/.test(enrollmentNumber)) {
+      return NextResponse.json({ error: 'Enrollment number must be numeric' }, { status: 400 })
     }
 
     const { rows } = await (pool as any).query(
       `
         insert into public.students (name, roll_number)
         values ($1, $2)
-        returning id, name, roll_number
+        returning id, name, roll_number as enrollment_number
       `,
-      [name, rollNumber],
+      [name, enrollmentNumber],
     )
 
     const row = rows[0] as any
     const newStudent = {
       id: row.id,
       name: row.name,
-      roll_number: row.roll_number ?? null,
+      enrollment_number: row.enrollment_number ?? null,
       face_enrolled: false,
     }
 
@@ -157,11 +163,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 401 })
     }
 
-    // Handle duplicate roll number
+    // Handle duplicate enrollment number
     if (error?.code === '23505') {
       const duplicateValue = error?.detail?.match(/=\(([^)]+)\)/)?.[1] || 'this number'
       return NextResponse.json(
-        { error: `A student with roll number "${duplicateValue}" already exists. Please use a different roll number or delete the existing record first.` },
+        { error: `A student with enrollment number "${duplicateValue}" already exists. Please use a unique enrollment number.` },
         { status: 409 }
       )
     }
@@ -170,3 +176,4 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
+

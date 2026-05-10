@@ -7,10 +7,8 @@ import { Button } from '@/components/ui/button'
 // Number of high-quality samples to capture before finalizing enrollment.
 // More samples = more robust averaged descriptor.
 const ENROLLMENT_SAMPLE_COUNT = 7
-
-// Minimum detection confidence accepted during enrollment.
-// Higher than scanner threshold because enrollment quality is critical.
 const ENROLLMENT_MIN_CONFIDENCE = 0.80
+const MIN_FACE_AREA = 12000 // Recommended value for controlled distance
 
 interface FaceEnrollmentModalProps {
   studentId: string
@@ -18,6 +16,7 @@ interface FaceEnrollmentModalProps {
   onEnrollmentComplete: (faceData: any) => Promise<void> | void
   onCancel: () => void
 }
+
 
 export default function FaceEnrollmentModal({
   studentId,
@@ -163,49 +162,64 @@ export default function FaceEnrollmentModal({
         const detection = detections[0]
         const confidence = detection.detection.score
         const box = detection.detection.box
+        
+        // Computed face area (width * height) as requested
+        const faceArea = Math.round(box.width * box.height)
         const frameArea = videoRef.current.videoWidth * videoRef.current.videoHeight
-        const faceArea = box.width * box.height
         const ratio = frameArea > 0 ? faceArea / frameArea : 0
+        
         const centerX = box.x + box.width / 2
         const centerY = box.y + box.height / 2
         const offsetX = Math.abs(centerX - videoRef.current.videoWidth / 2)
         const offsetY = Math.abs(centerY - videoRef.current.videoHeight / 2)
+        
         const leftEye = detection.landmarks.getLeftEye()
         const rightEye = detection.landmarks.getRightEye()
         const leftEyeY = leftEye.reduce((sum, p) => sum + p.y, 0) / leftEye.length
         const rightEyeY = rightEye.reduce((sum, p) => sum + p.y, 0) / rightEye.length
         const tilt = Math.abs(leftEyeY - rightEyeY)
-        console.log(`[enrollment] Face detected with confidence: ${confidence.toFixed(3)}`)
 
-        if (ratio < 0.1) {
-          setError('Face is too far. Please move closer to camera.')
-          setGuidanceMessage('Move closer. Your face should fill more of the frame.')
+        // Debug logging for developers
+        console.log(`[enrollment] Face detection stats: area=${faceArea}, confidence=${confidence.toFixed(3)}, ratio=${ratio.toFixed(3)}`)
+
+        // Distance check (Face Area filter)
+        if (faceArea < MIN_FACE_AREA) {
+          console.log(`[enrollment] Decision: REJECTED, Reason: Too small (area=${faceArea} < ${MIN_FACE_AREA})`)
+          setError('Too Far – Move Closer')
+          setGuidanceMessage('Please come closer to the camera to ensure high quality biometric capture.')
           return
         }
 
-        if (ratio > 0.58) {
-          setError('Face is too close. Please move back a little.')
+        if (ratio > 0.65) {
+          console.log(`[enrollment] Decision: REJECTED, Reason: Too close (ratio=${ratio.toFixed(3)})`)
+          setError('Too Close – Move Back')
           setGuidanceMessage('Move slightly back so your full face is visible.')
           return
         }
 
-        if (offsetX > videoRef.current.videoWidth * 0.2 || offsetY > videoRef.current.videoHeight * 0.2) {
-          setError('Face is off-center. Please stay in the middle.')
-          setGuidanceMessage('Center your face in the camera for faster capture.')
+        if (offsetX > videoRef.current.videoWidth * 0.25 || offsetY > videoRef.current.videoHeight * 0.25) {
+          console.log(`[enrollment] Decision: REJECTED, Reason: Off-center`)
+          setError('Face Off-Center')
+          setGuidanceMessage('Center your face in the camera frame.')
           return
         }
 
-        if (tilt > 12) {
-          setError('Head tilt detected. Please keep your face straight.')
-          setGuidanceMessage('Keep your head straight and remove cap/face cover if possible.')
+        if (tilt > 15) {
+          console.log(`[enrollment] Decision: REJECTED, Reason: Head tilt (${tilt.toFixed(1)}deg)`)
+          setError('Keep Head Straight')
+          setGuidanceMessage('Keep your head straight and look directly at the camera.')
           return
         }
 
         if (confidence < ENROLLMENT_MIN_CONFIDENCE) {
-          setError(`Low quality detection (${(confidence * 100).toFixed(1)}%). Improve light or clean lens.`)
-          setGuidanceMessage('Face not clear. Clean lens, remove cap, and look straight.')
+          console.log(`[enrollment] Decision: REJECTED, Reason: Low confidence (${confidence.toFixed(3)})`)
+          setError(`Low Visibility (${(confidence * 100).toFixed(0)}%)`)
+          setGuidanceMessage('Face not clearly visible. Improve lighting or clean your camera lens.')
           return
         }
+
+        console.log(`[enrollment] Decision: ACCEPTED, Reason: Valid face at optimal distance (area=${faceArea})`)
+
 
         // Validate descriptor is not corrupted (NaN or zero-vector)
         const descriptor = detection.descriptor

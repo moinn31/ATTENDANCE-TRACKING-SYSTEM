@@ -15,7 +15,7 @@ import { useAuth } from '@/hooks/use-auth'
 interface Student {
   id: string
   name: string
-  roll_number: string | null
+  enrollment_number: string | null
   face_enrolled: boolean
 }
 
@@ -25,7 +25,7 @@ export default function StudentsPage() {
   const [students, setStudents] = useState<Student[]>([])
   const [loading, setLoading] = useState(true)
   const [showAddForm, setShowAddForm] = useState(false)
-  const [newStudent, setNewStudent] = useState({ name: '', roll_number: '' })
+  const [newStudent, setNewStudent] = useState({ name: '', enrollment_number: '' })
   const [enrollingStudentId, setEnrollingStudentId] = useState<string | null>(null)
   const [enrollingStudentName, setEnrollingStudentName] = useState<string>('')
   const [saving, setSaving] = useState(false)
@@ -77,8 +77,13 @@ export default function StudentsPage() {
   const handleAddStudent = async (e: React.FormEvent) => {
     e.preventDefault()
     
-    if (!newStudent.name || !newStudent.roll_number) {
+    if (!newStudent.name || !newStudent.enrollment_number) {
       alert('Please fill in all fields')
+      return
+    }
+
+    if (!/^\d+$/.test(newStudent.enrollment_number)) {
+      alert('Enrollment number must contain only digits')
       return
     }
 
@@ -91,7 +96,7 @@ export default function StudentsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: newStudent.name.trim(),
-          roll_number: newStudent.roll_number.trim(),
+          enrollment_number: newStudent.enrollment_number.trim(),
         }),
       })
 
@@ -101,16 +106,18 @@ export default function StudentsPage() {
         throw new Error(payload.error || 'Failed to add student')
       }
 
+      // Prepend to list - but the list will be re-sorted on next refresh
       setStudents((prev) => [
         {
           id: payload.data.id,
           name: payload.data.name,
-          roll_number: payload.data.roll_number,
+          enrollment_number: payload.data.enrollment_number,
           face_enrolled: false,
         },
         ...prev,
-      ])
-      setNewStudent({ name: '', roll_number: '' })
+      ].sort((a, b) => Number(a.enrollment_number || 0) - Number(b.enrollment_number || 0)))
+      
+      setNewStudent({ name: '', enrollment_number: '' })
       setShowAddForm(false)
     } catch (err) {
       console.error('[v0] Error adding student:', err)
@@ -119,6 +126,7 @@ export default function StudentsPage() {
       setSaving(false)
     }
   }
+
 
   const deleteStudent = async (id: string) => {
     try {
@@ -279,21 +287,21 @@ export default function StudentsPage() {
                 <form onSubmit={handleAddStudent} className="mt-6 space-y-5">
                   <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-2">
                     <div className="space-y-2">
-                      <label className="text-sm font-medium text-slate-700">Student Name</label>
+                      <label className="text-sm font-medium text-slate-700">Enrollment Number</label>
                       <Input
-                        placeholder="Enter full name"
-                        value={newStudent.name}
-                        onChange={(e) => setNewStudent({ ...newStudent, name: e.target.value })}
+                        placeholder="Enter enrollment number"
+                        value={newStudent.enrollment_number}
+                        onChange={(e) => setNewStudent({ ...newStudent, enrollment_number: e.target.value })}
                         required
                         className="h-11 rounded-xl border-slate-200 bg-white"
                       />
                     </div>
                     <div className="space-y-2">
-                      <label className="text-sm font-medium text-slate-700">Roll Number</label>
+                      <label className="text-sm font-medium text-slate-700">Student Name</label>
                       <Input
-                        placeholder="Enter roll number"
-                        value={newStudent.roll_number}
-                        onChange={(e) => setNewStudent({ ...newStudent, roll_number: e.target.value })}
+                        placeholder="Enter full name"
+                        value={newStudent.name}
+                        onChange={(e) => setNewStudent({ ...newStudent, name: e.target.value })}
                         required
                         className="h-11 rounded-xl border-slate-200 bg-white"
                       />
@@ -359,7 +367,7 @@ export default function StudentsPage() {
                       <div key={student.id} className="flex items-center justify-between rounded-2xl bg-white/10 px-3 py-2">
                         <div>
                           <p className="font-medium">{student.name}</p>
-                          <p className="text-xs text-white/70">{student.roll_number || 'No roll number'}</p>
+                          <p className="text-xs text-white/70">{student.enrollment_number || 'No enrollment number'}</p>
                         </div>
                         <Badge className={student.face_enrolled ? 'bg-emerald-500 text-white hover:bg-emerald-500' : 'bg-amber-400 text-slate-900 hover:bg-amber-400'}>
                           {student.face_enrolled ? 'Enrolled' : 'Pending'}
@@ -401,8 +409,8 @@ export default function StudentsPage() {
           <table className="w-full">
             <thead className="bg-muted/60 border-b border-border">
               <tr>
+                <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Enrollment Number</th>
                 <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Name</th>
-                <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Roll Number</th>
                 <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Face Data</th>
                 <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Actions</th>
               </tr>
@@ -410,8 +418,8 @@ export default function StudentsPage() {
             <tbody className="divide-y divide-border">
               {students.map((student) => (
                 <tr key={student.id} className="hover:bg-muted/40 transition-colors">
+                  <td className="px-6 py-4 text-foreground font-mono font-medium">{student.enrollment_number || '-'}</td>
                   <td className="px-6 py-4 text-foreground">{student.name}</td>
-                  <td className="px-6 py-4 text-foreground">{student.roll_number || '-'}</td>
                   <td className="px-6 py-4">
                     <div className="flex flex-col gap-1">
                       <span className={`inline-block px-3 py-1 rounded-full text-xs font-semibold w-fit ${

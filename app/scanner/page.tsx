@@ -41,6 +41,7 @@ const DETECTOR_SCORE_THRESHOLD = 0.40
 const FACE_MATCH_DISTANCE_THRESHOLD = 0.75
 const REQUIRED_CONFIRMATION_FRAMES = 1
 const VIDEO_TARGET_FPS = 30
+const MIN_FACE_AREA = 10000 // Only scan students who are close to the camera
 
 const formatVideoTimestamp = (seconds: number) => {
   const safe = Math.max(0, Math.floor(seconds))
@@ -487,8 +488,16 @@ export default function ScannerPage() {
         }
 
         const bestMatch = faceMatcher.findBestMatch(descriptor)
-        console.log(`[scanner] Face ${i} bestMatch: ${bestMatch.toString()} (Dist: ${bestMatch.distance.toFixed(4)})`)
-        
+        const box = detection.detection.box
+        const faceArea = Math.round(box.width * box.height)
+
+        console.log(`[scanner] Face ${i}: area=${faceArea}, match=${bestMatch.label}, dist=${bestMatch.distance.toFixed(4)}`)
+
+        if (faceArea < MIN_FACE_AREA) {
+          console.log(`[scanner] Face ${i} REJECTED: Too far (area=${faceArea} < ${MIN_FACE_AREA})`)
+          continue
+        }
+
         if (bestMatch.label === 'unknown') {
           // Find nearest anyway for debugging
           const closest = enrolledStudents.map(s => ({
@@ -540,9 +549,19 @@ export default function ScannerPage() {
       }
 
       if (recognized.length === 0) {
-        setScanStatus(`Detected ${detections.length} face(s), searching for enrolled match...`)
+        if (detections.length > 0) {
+          const smallFaces = detections.filter(d => (d.detection.box.width * d.detection.box.height) < MIN_FACE_AREA).length
+          if (smallFaces === detections.length) {
+            setScanStatus('Too Far – Move Closer')
+          } else {
+            setScanStatus('Face Detected - Recognizing...')
+          }
+        } else {
+          setScanStatus('Ready to scan - No face detected')
+        }
         return
       }
+
 
       const deduped = Array.from(new Map(recognized.map((student) => [student.id, student])).values())
 
@@ -558,7 +577,7 @@ export default function ScannerPage() {
       previewPresentRef.current = nextSet
       setPreviewPresentIds(Array.from(nextSet))
 
-      setScanStatus(`Detected ${detections.length} face(s). Present preview: ${nextSet.size} student(s).`)
+      setScanStatus(`Face Detected. Present preview: ${nextSet.size} student(s).`)
     } catch (err) {
       console.error('[scanner] detection failure', err)
     } finally {

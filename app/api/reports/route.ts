@@ -59,7 +59,7 @@ export async function GET(req: NextRequest) {
         FROM public.students s
         LEFT JOIN public.attendance_records ar ON s.id = ar.student_id
         GROUP BY s.id, s.name, s.roll_number
-        ORDER BY s.name ASC
+        ORDER BY cast(s.roll_number as integer) ASC
       `),
 
       // Confidence distribution
