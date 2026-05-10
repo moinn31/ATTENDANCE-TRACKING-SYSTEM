@@ -14,7 +14,7 @@ frontend:
         - npm ls @tailwindcss/oxide-linux-x64-gnu --depth=0 || true
         - ls -la node_modules | head -n 40 || true
         - ls -la node_modules/lightningcss* || true
-        - node -e "try{console.log('resolve lightningcss:', require.resolve('lightningcss-linux-x64-gnu'))}catch(e){console.log('resolve-lightningcss-failed')}; try{console.log('resolve oxide:', require.resolve('@tailwindcss/oxide-linux-x64-gnu'))}catch(e){console.log('resolve-oxide-failed')}"
+        - node -e "try{console.log('resolve lightningcss:', require.resolve('lightningcss-linux-x64-gnu'))}catch(e){console.log('resolve-lightningcss-failed')}; try{console.log('resolve oxide:', require.resolve('@tailwindcss/oxide-linux-x64-gnu'))}catch(e){console.log('resolve-oxide-failed')}" || true
     build:
       commands:
         - npm run build -- --webpack
