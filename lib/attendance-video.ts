@@ -146,10 +146,104 @@ const processFrameCanvas = async (
 
   if (detections.length === 0) return
 
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })
+
   for (const detection of detections) {
     const detectionScore = detection.detection.score
     const box = detection.detection.box
     const faceArea = Math.round(box.width * box.height)
+
+    // DRAWING LOGIC -------------------------------------------
+    if (ctx) {
+      const bestMatch = faceMatcher.findBestMatch(detection.descriptor)
+      const student = bestMatch.label !== 'unknown' ? enrolledStudents.find(s => s.id === bestMatch.label) : null
+
+      const BOX_PADDING = 4
+      const bx = box.x - BOX_PADDING
+      const by = box.y - BOX_PADDING
+      const bw = box.width + BOX_PADDING * 2
+      const bh = box.height + BOX_PADDING * 2
+
+      if (student && faceArea >= MIN_FACE_AREA) {
+        // Green glow box
+        ctx.save()
+        ctx.shadowColor = 'rgba(34, 197, 94, 0.8)'
+        ctx.shadowBlur = 18
+        ctx.strokeStyle = '#22c55e'
+        ctx.lineWidth = 3
+        ctx.strokeRect(bx, by, bw, bh)
+        ctx.restore()
+
+        // Corner accents
+        const cLen = Math.min(28, bw * 0.22)
+        ctx.strokeStyle = '#4ade80'
+        ctx.lineWidth = 4
+        ctx.lineCap = 'round'
+        ctx.beginPath(); ctx.moveTo(bx, by + cLen); ctx.lineTo(bx, by); ctx.lineTo(bx + cLen, by); ctx.stroke()
+        ctx.beginPath(); ctx.moveTo(bx + bw - cLen, by); ctx.lineTo(bx + bw, by); ctx.lineTo(bx + bw, by + cLen); ctx.stroke()
+        ctx.beginPath(); ctx.moveTo(bx, by + bh - cLen); ctx.lineTo(bx, by + bh); ctx.lineTo(bx + cLen, by + bh); ctx.stroke()
+        ctx.beginPath(); ctx.moveTo(bx + bw - cLen, by + bh); ctx.lineTo(bx + bw, by + bh); ctx.lineTo(bx + bw, by + bh - cLen); ctx.stroke()
+
+        // Greeting badge
+        const matchConfidence = Math.max(0, Math.min(100, Math.round((1 - bestMatch.distance) * 100)))
+        const greeting = `Hello, ${student.name}!`
+        const subLabel = `${matchConfidence}% match`
+        ctx.font = 'bold 17px system-ui, sans-serif'
+        const greetWidth = ctx.measureText(greeting).width
+        ctx.font = '12px system-ui, sans-serif'
+        const subWidth = ctx.measureText(subLabel).width
+        const badgeW = Math.max(greetWidth, subWidth) + 24
+        const badgeH = 46
+        const badgeX = bx
+        const badgeY = by - badgeH - 6
+
+        // Pill background
+        ctx.save()
+        ctx.shadowColor = 'rgba(34, 197, 94, 0.5)'
+        ctx.shadowBlur = 12
+        ctx.fillStyle = 'rgba(21, 128, 61, 0.92)'
+        const r = 10
+        ctx.beginPath()
+        ctx.moveTo(badgeX + r, badgeY)
+        ctx.lineTo(badgeX + badgeW - r, badgeY)
+        ctx.quadraticCurveTo(badgeX + badgeW, badgeY, badgeX + badgeW, badgeY + r)
+        ctx.lineTo(badgeX + badgeW, badgeY + badgeH - r)
+        ctx.quadraticCurveTo(badgeX + badgeW, badgeY + badgeH, badgeX + badgeW - r, badgeY + badgeH)
+        ctx.lineTo(badgeX + r, badgeY + badgeH)
+        ctx.quadraticCurveTo(badgeX, badgeY + badgeH, badgeX, badgeY + badgeH - r)
+        ctx.lineTo(badgeX, badgeY + r)
+        ctx.quadraticCurveTo(badgeX, badgeY, badgeX + r, badgeY)
+        ctx.closePath()
+        ctx.fill()
+        ctx.restore()
+
+        // Text
+        ctx.fillStyle = '#ffffff'
+        ctx.font = 'bold 16px system-ui, sans-serif'
+        ctx.fillText(greeting, badgeX + 12, badgeY + 19)
+        ctx.fillStyle = '#bbf7d0'
+        ctx.font = '12px system-ui, sans-serif'
+        ctx.fillText(subLabel, badgeX + 12, badgeY + 36)
+      } else {
+        // Cyan scanning box
+        ctx.strokeStyle = 'rgba(6, 182, 212, 0.6)'
+        ctx.lineWidth = 2
+        ctx.setLineDash([6, 4])
+        ctx.strokeRect(bx, by, bw, bh)
+        ctx.setLineDash([])
+
+        const scanLabel = 'Scanning...'
+        ctx.font = '13px system-ui, sans-serif'
+        const sw = ctx.measureText(scanLabel).width + 16
+        const sx = bx
+        const sy = by - 26
+        ctx.fillStyle = 'rgba(8, 145, 178, 0.85)'
+        ctx.fillRect(sx, sy, sw, 22)
+        ctx.fillStyle = '#e0f7fa'
+        ctx.fillText(scanLabel, sx + 8, sy + 15)
+      }
+    }
+    // --------------------------------------------------------
 
     if (faceArea < MIN_FACE_AREA) continue
     if (detectionScore < mergedOptions.minDetectionScore) continue

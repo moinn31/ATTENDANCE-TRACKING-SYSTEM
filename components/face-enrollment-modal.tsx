@@ -271,8 +271,67 @@ export default function FaceEnrollmentModal({
         const ctx = canvasRef.current.getContext('2d')
         if (ctx) {
           ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height)
-          faceapi.draw.drawDetections(canvasRef.current, resizedDetections)
-          faceapi.draw.drawFaceLandmarks(canvasRef.current, resizedDetections)
+          
+          resizedDetections.forEach((det) => {
+            const box = det.detection.box
+            const BOX_PADDING = 4
+            const bx = box.x - BOX_PADDING
+            const by = box.y - BOX_PADDING
+            const bw = box.width + BOX_PADDING * 2
+            const bh = box.height + BOX_PADDING * 2
+
+            // Green glow box
+            ctx.save()
+            ctx.shadowColor = 'rgba(34, 197, 94, 0.8)'
+            ctx.shadowBlur = 18
+            ctx.strokeStyle = '#22c55e'
+            ctx.lineWidth = 3
+            ctx.strokeRect(bx, by, bw, bh)
+            ctx.restore()
+
+            // Corner accents
+            const cLen = Math.min(28, bw * 0.22)
+            ctx.strokeStyle = '#4ade80'
+            ctx.lineWidth = 4
+            ctx.lineCap = 'round'
+            ctx.beginPath(); ctx.moveTo(bx, by + cLen); ctx.lineTo(bx, by); ctx.lineTo(bx + cLen, by); ctx.stroke()
+            ctx.beginPath(); ctx.moveTo(bx + bw - cLen, by); ctx.lineTo(bx + bw, by); ctx.lineTo(bx + bw, by + cLen); ctx.stroke()
+            ctx.beginPath(); ctx.moveTo(bx, by + bh - cLen); ctx.lineTo(bx, by + bh); ctx.lineTo(bx + cLen, by + bh); ctx.stroke()
+            ctx.beginPath(); ctx.moveTo(bx + bw - cLen, by + bh); ctx.lineTo(bx + bw, by + bh); ctx.lineTo(bx + bw, by + bh - cLen); ctx.stroke()
+
+            // "Enrolling Face..." badge
+            const label = 'Enrolling Face...'
+            ctx.font = 'bold 16px system-ui, sans-serif'
+            const labelWidth = ctx.measureText(label).width
+            const badgeW = labelWidth + 24
+            const badgeH = 32
+            const badgeX = bx
+            const badgeY = by - badgeH - 6
+
+            // Pill background
+            ctx.save()
+            ctx.shadowColor = 'rgba(34, 197, 94, 0.5)'
+            ctx.shadowBlur = 12
+            ctx.fillStyle = 'rgba(21, 128, 61, 0.92)'
+            const r = 10
+            ctx.beginPath()
+            ctx.moveTo(badgeX + r, badgeY)
+            ctx.lineTo(badgeX + badgeW - r, badgeY)
+            ctx.quadraticCurveTo(badgeX + badgeW, badgeY, badgeX + badgeW, badgeY + r)
+            ctx.lineTo(badgeX + badgeW, badgeY + badgeH - r)
+            ctx.quadraticCurveTo(badgeX + badgeW, badgeY + badgeH, badgeX + badgeW - r, badgeY + badgeH)
+            ctx.lineTo(badgeX + r, badgeY + badgeH)
+            ctx.quadraticCurveTo(badgeX, badgeY + badgeH, badgeX, badgeY + badgeH - r)
+            ctx.lineTo(badgeX, badgeY + r)
+            ctx.quadraticCurveTo(badgeX, badgeY, badgeX + r, badgeY)
+            ctx.closePath()
+            ctx.fill()
+            ctx.restore()
+
+            // Text
+            ctx.fillStyle = '#ffffff'
+            ctx.fillText(label, badgeX + 12, badgeY + 21)
+          })
         }
       } catch (err) {
         console.error('[enrollment] Detection error:', err)

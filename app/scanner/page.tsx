@@ -450,21 +450,8 @@ export default function ScannerPage() {
       canvas.height = displaySize.height
       faceapi.matchDimensions(canvas, displaySize)
       const resized = faceapi.resizeResults(detections, displaySize)
-      const ctx = canvas.getContext('2d', { willReadFrequently: true })
-      if (ctx) {
-        ctx.clearRect(0, 0, canvas.width, canvas.height)
-        
-        // Draw detections using face-api.js built-in drawing
-        faceapi.draw.drawDetections(canvas, resized)
-
-        // Custom confidence labels
-        resized.forEach((det) => {
-          const { box, score } = det.detection
-          ctx.fillStyle = '#00ff00'
-          ctx.font = 'bold 16px sans-serif'
-          ctx.fillText(`${(score * 100).toFixed(0)}%`, box.x + 5, box.y > 25 ? box.y - 10 : box.y + 25)
-        })
-      }
+      // We'll draw the canvas AFTER matching so we can colour-code recognized vs unknown faces
+      // (drawing is deferred to after the recognition loop below)
 
       console.log(`[scanner] Live Frame: Detected ${detections.length} face(s) with SSD scoreThreshold ${DETECTOR_SCORE_THRESHOLD}`)
 
@@ -548,6 +535,128 @@ export default function ScannerPage() {
         })
       }
 
+      // ── CANVAS DRAWING (after matching so we know who is recognized) ────────────
+      const ctx = canvas.getContext('2d', { willReadFrequently: true })
+      if (ctx) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+        // Build a quick lookup: detectionIndex → recognized student
+        const recognizedByFaceIdx = new Map<number, DetectedStudent>()
+        for (const candidate of candidates) {
+          if (assignedFaces.has(candidate.detectionIndex)) {
+            const matched = enrolledByIdRef.current.get(candidate.studentId)
+            if (matched) {
+              const conf = distanceToConfidence(candidate.distance)
+              recognizedByFaceIdx.set(candidate.detectionIndex, {
+                id: matched.id,
+                name: matched.name,
+                roll_number: matched.roll_number,
+                confidence: conf,
+                timestamp: new Date().toLocaleTimeString(),
+              })
+            }
+          }
+        }
+
+        resized.forEach((det, idx) => {
+          const box = det.detection.box
+          const student = recognizedByFaceIdx.get(idx)
+          const isRecognized = Boolean(student)
+
+          const BOX_PADDING = 4
+          const bx = box.x - BOX_PADDING
+          const by = box.y - BOX_PADDING
+          const bw = box.width + BOX_PADDING * 2
+          const bh = box.height + BOX_PADDING * 2
+
+          if (isRecognized && student) {
+            // ── Green glow box ────────────────────────────────────────────
+            ctx.save()
+            ctx.shadowColor = 'rgba(34, 197, 94, 0.8)'
+            ctx.shadowBlur = 18
+            ctx.strokeStyle = '#22c55e'
+            ctx.lineWidth = 3
+            ctx.strokeRect(bx, by, bw, bh)
+            ctx.restore()
+
+            // Corner accents (top-left & bottom-right)
+            const cLen = Math.min(28, bw * 0.22)
+            ctx.strokeStyle = '#4ade80'
+            ctx.lineWidth = 4
+            ctx.lineCap = 'round'
+            // TL
+            ctx.beginPath(); ctx.moveTo(bx, by + cLen); ctx.lineTo(bx, by); ctx.lineTo(bx + cLen, by); ctx.stroke()
+            // TR
+            ctx.beginPath(); ctx.moveTo(bx + bw - cLen, by); ctx.lineTo(bx + bw, by); ctx.lineTo(bx + bw, by + cLen); ctx.stroke()
+            // BL
+            ctx.beginPath(); ctx.moveTo(bx, by + bh - cLen); ctx.lineTo(bx, by + bh); ctx.lineTo(bx + cLen, by + bh); ctx.stroke()
+            // BR
+            ctx.beginPath(); ctx.moveTo(bx + bw - cLen, by + bh); ctx.lineTo(bx + bw, by + bh); ctx.lineTo(bx + bw, by + bh - cLen); ctx.stroke()
+
+            // ── Greeting badge (above box) ────────────────────────────────
+            const greeting = `Hello, ${student.name}!`
+            const subLabel = `${student.confidence}% match`
+            ctx.font = 'bold 17px system-ui, sans-serif'
+            const greetWidth = ctx.measureText(greeting).width
+            ctx.font = '12px system-ui, sans-serif'
+            const subWidth = ctx.measureText(subLabel).width
+            const badgeW = Math.max(greetWidth, subWidth) + 24
+            const badgeH = 46
+            const badgeX = bx
+            const badgeY = by - badgeH - 6
+
+            // Pill background
+            ctx.save()
+            ctx.shadowColor = 'rgba(34, 197, 94, 0.5)'
+            ctx.shadowBlur = 12
+            ctx.fillStyle = 'rgba(21, 128, 61, 0.92)'
+            const r = 10
+            ctx.beginPath()
+            ctx.moveTo(badgeX + r, badgeY)
+            ctx.lineTo(badgeX + badgeW - r, badgeY)
+            ctx.quadraticCurveTo(badgeX + badgeW, badgeY, badgeX + badgeW, badgeY + r)
+            ctx.lineTo(badgeX + badgeW, badgeY + badgeH - r)
+            ctx.quadraticCurveTo(badgeX + badgeW, badgeY + badgeH, badgeX + badgeW - r, badgeY + badgeH)
+            ctx.lineTo(badgeX + r, badgeY + badgeH)
+            ctx.quadraticCurveTo(badgeX, badgeY + badgeH, badgeX, badgeY + badgeH - r)
+            ctx.lineTo(badgeX, badgeY + r)
+            ctx.quadraticCurveTo(badgeX, badgeY, badgeX + r, badgeY)
+            ctx.closePath()
+            ctx.fill()
+            ctx.restore()
+
+            // Greeting text
+            ctx.fillStyle = '#ffffff'
+            ctx.font = 'bold 16px system-ui, sans-serif'
+            ctx.fillText(greeting, badgeX + 12, badgeY + 19)
+
+            // Sub-label
+            ctx.fillStyle = '#bbf7d0'
+            ctx.font = '12px system-ui, sans-serif'
+            ctx.fillText(subLabel, badgeX + 12, badgeY + 36)
+
+          } else {
+            // ── Unknown face – subtle cyan scanning frame ─────────────────
+            ctx.strokeStyle = 'rgba(6, 182, 212, 0.6)'
+            ctx.lineWidth = 2
+            ctx.setLineDash([6, 4])
+            ctx.strokeRect(bx, by, bw, bh)
+            ctx.setLineDash([])
+
+            const scanLabel = 'Scanning...'
+            ctx.font = '13px system-ui, sans-serif'
+            const sw = ctx.measureText(scanLabel).width + 16
+            const sx = bx
+            const sy = by - 26
+            ctx.fillStyle = 'rgba(8, 145, 178, 0.85)'
+            ctx.fillRect(sx, sy, sw, 22)
+            ctx.fillStyle = '#e0f7fa'
+            ctx.fillText(scanLabel, sx + 8, sy + 15)
+          }
+        })
+      }
+      // ── END CANVAS DRAWING ──────────────────────────────────────────────────────
+
       if (recognized.length === 0) {
         if (detections.length > 0) {
           const smallFaces = detections.filter(d => (d.detection.box.width * d.detection.box.height) < MIN_FACE_AREA).length
@@ -561,7 +670,6 @@ export default function ScannerPage() {
         }
         return
       }
-
 
       const deduped = Array.from(new Map(recognized.map((student) => [student.id, student])).values())
 
