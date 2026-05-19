@@ -464,11 +464,41 @@ export function DashboardShell({ title, subtitle, children, headerActions }: Das
             </div>
           </header>
 
-          <div className="mx-auto w-full max-w-[1600px] px-4 py-5 md:px-6">
+          <div className="mx-auto w-full max-w-[1600px] px-4 py-5 md:px-6 pb-24 md:pb-6">
             {children}
           </div>
         </div>
       </SidebarInset>
+
+      {/* Mobile Bottom Navigation */}
+      <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 border-t border-slate-200 bg-white/85 backdrop-blur-xl pb-safe">
+        <div className="flex items-center justify-around px-2 py-2">
+          {navigationItems.slice(0, 5).map((item) => {
+            const active = pathname === item.href
+            return (
+              <Link 
+                key={item.href} 
+                href={item.disabled ? '#' : item.href}
+                className={cn(
+                  "flex flex-col items-center justify-center p-2 rounded-xl transition-all duration-200",
+                  active ? "text-[#2b5c9e]" : "text-slate-400 hover:text-slate-600",
+                  item.disabled && "opacity-50 cursor-not-allowed pointer-events-none"
+                )}
+              >
+                <div className={cn(
+                  "flex items-center justify-center rounded-full p-1.5 transition-all duration-300",
+                  active ? "bg-blue-50 scale-110" : "bg-transparent"
+                )}>
+                  <item.icon className="size-5" />
+                </div>
+                <span className="mt-1 text-[10px] font-medium tracking-tight">
+                  {item.label === 'Attendance' ? 'Scan' : item.label === 'System Status' ? 'Status' : item.label}
+                </span>
+              </Link>
+            )
+          })}
+        </div>
+      </div>
     </SidebarProvider>
   )
 }

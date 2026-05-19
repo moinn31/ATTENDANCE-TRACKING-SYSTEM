@@ -342,7 +342,11 @@ export default function ScannerPage() {
       }
 
       const rows = payload.data || []
-      setAllStudents(rows)
+      const mappedRows = rows.map((r: any) => ({
+        ...r,
+        roll_number: r.enrollment_number || r.roll_number
+      }))
+      setAllStudents(mappedRows)
 
       const enrolled: EnrolledStudent[] = rows
         .map((row: any) => {
@@ -357,7 +361,7 @@ export default function ScannerPage() {
           return {
             id: row.id,
             name: row.name,
-            roll_number: row.roll_number ?? null,
+            roll_number: row.enrollment_number || row.roll_number || null,
             descriptor,
           }
         })
@@ -594,7 +598,7 @@ export default function ScannerPage() {
             ctx.beginPath(); ctx.moveTo(bx + bw - cLen, by + bh); ctx.lineTo(bx + bw, by + bh); ctx.lineTo(bx + bw, by + bh - cLen); ctx.stroke()
 
             // ── Greeting badge (above box) ────────────────────────────────
-            const greeting = `Hello, ${student.name}!`
+            const greeting = student.roll_number ? `${student.name} (${student.roll_number})` : student.name
             const subLabel = `${student.confidence}% match`
             ctx.font = 'bold 17px system-ui, sans-serif'
             const greetWidth = ctx.measureText(greeting).width

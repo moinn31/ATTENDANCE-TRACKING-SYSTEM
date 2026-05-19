@@ -1,9 +1,11 @@
 import { Pool } from 'pg';
 
-let pool: Pool | null = null;
+declare global {
+  var _pgPool: Pool | undefined;
+}
 
 function getPool(): Pool {
-  if (pool) return pool;
+  if (globalThis._pgPool) return globalThis._pgPool;
 
   const password = process.env.POSTGRES_PASSWORD;
   const host = process.env.POSTGRES_HOST || 'student-db.c49geqe6ga6f.us-east-1.rds.amazonaws.com';
@@ -16,19 +18,19 @@ function getPool(): Pool {
     console.error('CRITICAL: POSTGRES_PASSWORD is not set in .env.local');
   }
 
-  pool = new Pool({
+  globalThis._pgPool = new Pool({
     host,
     port,
     user,
     password,
     database,
     ssl,
-    connectionTimeoutMillis: 10000,
+    connectionTimeoutMillis: 15000, // increased timeout
     idleTimeoutMillis: 30000,
-    max: 10
+    max: 20 // increased max connections
   });
 
-  return pool;
+  return globalThis._pgPool;
 }
 
 // Export a proxy that mimics the Pool interface

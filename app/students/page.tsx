@@ -404,61 +404,110 @@ export default function StudentsPage() {
           </DialogContent>
         </Dialog>
 
-        {/* Students Table */}
+        {/* Students List */}
         <div className="glass-card overflow-hidden">
-          <table className="w-full">
-            <thead className="bg-muted/60 border-b border-border">
-              <tr>
-                <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Enrollment Number</th>
-                <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Name</th>
-                <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Face Data</th>
-                <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {students.map((student) => (
-                <tr key={student.id} className="hover:bg-muted/40 transition-colors">
-                  <td className="px-6 py-4 text-foreground font-mono font-medium">{student.enrollment_number || '-'}</td>
-                  <td className="px-6 py-4 text-foreground">{student.name}</td>
-                  <td className="px-6 py-4">
-                    <div className="flex flex-col gap-1">
-                      <span className={`inline-block px-3 py-1 rounded-full text-xs font-semibold w-fit ${
-                        student.face_enrolled 
-                          ? 'bg-green-100 text-green-800' 
-                          : 'bg-amber-100 text-amber-800'
-                      }`}>
-                        {student.face_enrolled ? 'Enrolled' : 'Pending'}
-                      </span>
-                      {student.face_enrolled && (student as any).embedding_vector && (student as any).embedding_vector.length !== 128 && (
-                        <span className="text-[10px] text-red-600 font-medium">
-                          ⚠ Incompatible data ({ (student as any).embedding_vector.length }d). Please re-enroll.
-                        </span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex gap-2">
-                      <Button 
-                        size="sm" 
-                        variant={student.face_enrolled ? "outline" : "default"}
-                        onClick={() => handleStartEnrollment(student.id, student.name)}
-                      >
-                        {student.face_enrolled ? 'Re-enroll Face' : 'Enroll Face'}
-                      </Button>
-                      <Button 
-                        size="sm" 
-                        variant="destructive"
-                        disabled={saving}
-                        onClick={() => deleteStudent(student.id)}
-                      >
-                        Delete
-                      </Button>
-                    </div>
-                  </td>
+          
+          {/* Desktop Table View */}
+          <div className="hidden md:block overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-muted/60 border-b border-border">
+                <tr>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Enrollment Number</th>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Name</th>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Face Data</th>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {students.map((student) => (
+                  <tr key={student.id} className="hover:bg-muted/40 transition-colors">
+                    <td className="px-6 py-4 text-foreground font-mono font-medium">{student.enrollment_number || '-'}</td>
+                    <td className="px-6 py-4 text-foreground">{student.name}</td>
+                    <td className="px-6 py-4">
+                      <div className="flex flex-col gap-1">
+                        <span className={`inline-block px-3 py-1 rounded-full text-xs font-semibold w-fit ${
+                          student.face_enrolled 
+                            ? 'bg-green-100 text-green-800' 
+                            : 'bg-amber-100 text-amber-800'
+                        }`}>
+                          {student.face_enrolled ? 'Enrolled' : 'Pending'}
+                        </span>
+                        {student.face_enrolled && (student as any).embedding_vector && (student as any).embedding_vector.length !== 128 && (
+                          <span className="text-[10px] text-red-600 font-medium">
+                            ⚠ Incompatible data ({ (student as any).embedding_vector.length }d). Please re-enroll.
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex gap-2">
+                        <Button 
+                          size="sm" 
+                          variant={student.face_enrolled ? "outline" : "default"}
+                          onClick={() => handleStartEnrollment(student.id, student.name)}
+                        >
+                          {student.face_enrolled ? 'Re-enroll Face' : 'Enroll Face'}
+                        </Button>
+                        <Button 
+                          size="sm" 
+                          variant="destructive"
+                          disabled={saving}
+                          onClick={() => deleteStudent(student.id)}
+                        >
+                          Delete
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Mobile Card View */}
+          <div className="md:hidden divide-y divide-border">
+            {students.map((student) => (
+              <div key={student.id} className="p-4 flex flex-col gap-3">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h3 className="font-semibold text-foreground">{student.name}</h3>
+                    <p className="text-sm font-mono text-muted-foreground mt-0.5">{student.enrollment_number || 'No ID'}</p>
+                  </div>
+                  <span className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                    student.face_enrolled ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'
+                  }`}>
+                    {student.face_enrolled ? 'Enrolled' : 'Pending'}
+                  </span>
+                </div>
+                
+                {student.face_enrolled && (student as any).embedding_vector && (student as any).embedding_vector.length !== 128 && (
+                  <div className="text-[10px] text-red-600 font-medium bg-red-50 p-2 rounded-md">
+                    ⚠ Incompatible face data. Please re-enroll.
+                  </div>
+                )}
+
+                <div className="flex gap-2 mt-2">
+                  <Button 
+                    size="sm" 
+                    variant={student.face_enrolled ? "outline" : "default"}
+                    className="flex-1 h-9"
+                    onClick={() => handleStartEnrollment(student.id, student.name)}
+                  >
+                    {student.face_enrolled ? 'Re-enroll' : 'Enroll Face'}
+                  </Button>
+                  <Button 
+                    size="sm" 
+                    variant="destructive"
+                    className="flex-1 h-9"
+                    disabled={saving}
+                    onClick={() => deleteStudent(student.id)}
+                  >
+                    Delete
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
 
           {students.length === 0 && (
             <div className="p-8 text-center">

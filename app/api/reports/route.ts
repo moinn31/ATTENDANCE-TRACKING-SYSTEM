@@ -2,20 +2,14 @@ import pool from '@/lib/db'
 import { verifyToken } from '@/lib/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
+export const dynamic = 'force-dynamic'
+
 export async function GET(req: NextRequest) {
   try {
     await verifyToken(req)
 
-    // Run all queries in parallel for speed
-    const [
-      overviewResult,
-      dailyResult,
-      studentResult,
-      confidenceResult,
-      recentResult
-    ] = await Promise.all([
-      // Overview stats: total records, total students, overall attendance rate
-      pool.query(`
+    // Execute queries sequentially to prevent PostgreSQL connection pool timeouts under high load
+    const overviewResult = await pool.query(`
         SELECT 
           COUNT(*) as total_records,
           COUNT(DISTINCT student_id) as total_students,
@@ -25,10 +19,10 @@ export async function GET(req: NextRequest) {
           ROUND(AVG(detected_confidence)::numeric, 1) as avg_confidence,
           COUNT(DISTINCT date) as total_days
         FROM public.attendance_records
-      `),
+      `)
 
       // Daily breakdown for the last 14 days
-      pool.query(`
+      const dailyResult = await pool.query(`
         SELECT 
           date::text as date,
           COUNT(*) FILTER (WHERE status = 'present') as present,
@@ -39,10 +33,10 @@ export async function GET(req: NextRequest) {
         WHERE date >= (current_date - interval '14 days')
         GROUP BY date
         ORDER BY date ASC
-      `),
+      `)
 
       // Per-student metrics
-      pool.query(`
+      const studentResult = await pool.query(`
         SELECT 
           s.name as student_name,
           s.roll_number,
@@ -60,10 +54,10 @@ export async function GET(req: NextRequest) {
         LEFT JOIN public.attendance_records ar ON s.id = ar.student_id
         GROUP BY s.id, s.name, s.roll_number
         ORDER BY cast(s.roll_number as integer) ASC
-      `),
+      `)
 
       // Confidence distribution
-      pool.query(`
+      const confidenceResult = await pool.query(`
         SELECT 
           CASE 
             WHEN detected_confidence >= 95 THEN '95-100%'
@@ -76,10 +70,10 @@ export async function GET(req: NextRequest) {
         WHERE detected_confidence IS NOT NULL AND detected_confidence > 0
         GROUP BY bucket
         ORDER BY bucket DESC
-      `),
+      `)
 
       // Most recent 20 records
-      pool.query(`
+      const recentResult = await pool.query(`
         SELECT 
           ar.id, s.name as student_name, s.roll_number, ar.status, 
           ar.detected_confidence as confidence, ar.timestamp as check_in_time,
@@ -89,7 +83,6 @@ export async function GET(req: NextRequest) {
         ORDER BY ar.timestamp DESC
         LIMIT 20
       `)
-    ])
 
     const overview = overviewResult.rows[0]
     const totalRecords = parseInt(overview.total_records) || 0
